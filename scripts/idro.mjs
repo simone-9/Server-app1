@@ -37,7 +37,13 @@ if (!BRENTA) cfg.pluviometri = [];
 // Bacino dell'Osservatorio scelto dal gruppo nelle impostazioni: si leggono solo le stazioni di quel bacino.
 // Senza impostazioni del gruppo, o con impostazioni vecchie senza la scelta, vale il comportamento storico (Brenta se il fiume è quello del file).
 const OSS_BACINO = !GRP_FIUME ? 'Brenta Bacchiglione' : (GRP_FIUME.osservatorio !== undefined ? GRP_FIUME.osservatorio : (BRENTA ? 'Brenta Bacchiglione' : ''));
-if (cfg.osservatorio) {
+// Stazioni scelte dal gruppo nelle impostazioni (livelli e pluviometri, per provincia): valgono al posto del bacino
+const OSS_SCELTE = GRP && GRP.osservatorio && ((GRP.osservatorio.livello || []).length || (GRP.osservatorio.pioggia || []).length) ? GRP.osservatorio : null;
+if (cfg.osservatorio && OSS_SCELTE) {
+  const el = l => (Array.isArray(l) ? l : []).filter(x => x && /^\d{1,9}$/.test(String(x.id))).slice(0, 40).map(x => ({ id: Number(x.id), nome: String(x.nome || x.id).slice(0, 80) }));
+  cfg.osservatorio = Object.assign({}, cfg.osservatorio, { livello: el(OSS_SCELTE.livello), pioggia: el(OSS_SCELTE.pioggia), scelte: true });
+  console.log(`Osservatorio: stazioni scelte dal gruppo (${cfg.osservatorio.livello.length} livelli, ${cfg.osservatorio.pioggia.length} pluviometri)`);
+} else if (cfg.osservatorio) {
   const def = OSS_BACINO && cfg.osservatorio.bacini && cfg.osservatorio.bacini[OSS_BACINO];
   if (!OSS_BACINO || (cfg.osservatorio.bacini && !def)) cfg.osservatorio = null;
   else if (def && !def.elenco) cfg.osservatorio = Object.assign({}, cfg.osservatorio, { bacino: OSS_BACINO, fiumi: def.fiumi || [], livello: [], pioggia: def.pioggia || [], dinamico: true });
