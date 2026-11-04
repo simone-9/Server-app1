@@ -5,6 +5,10 @@ on:
     - cron: "*/10 * * * *"     # ogni 10 minuti, 24 ore su 24
   workflow_dispatch:            # avvio manuale dal pulsante "Run workflow"
     inputs:
+      gruppo:
+        description: "Solo questo gruppo (codice); vuoto = tutti i gruppi attivi"
+        type: string
+        required: false
       test_telegram:
         description: "Invia solo un messaggio di prova su Telegram"
         type: boolean
@@ -23,9 +27,12 @@ jobs:
     # Se la Regione Veneto blocca gli indirizzi di GitHub, usa un runner a casa: vedi monitor-allerte/LEGGIMI-runner.md
     # (in quel caso sostituisci la riga sotto con: runs-on: [self-hosted, monitor-allerte]).
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -39,8 +46,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_TELEGRAM: ${{ inputs.test_telegram }}
           RIELABORA: ${{ inputs.rielabora }}
-          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          GRUPPO_ID: ${{ inputs.gruppo || vars.GRUPPO_ID }}
           COMUNE: ${{ vars.COMUNE }}
           CFD_ZONA: ${{ vars.CFD_ZONA }}
           CFD_NOME_ZONA: ${{ vars.CFD_NOME_ZONA }}
-        run: python monitor-allerte/monitor_allerte.py
+        run: node scripts/per-gruppi.mjs python monitor-allerte/monitor_allerte.py

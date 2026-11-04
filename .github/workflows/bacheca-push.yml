@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '2-59/5 * * * *'   # ogni 5 minuti (GitHub puo' ritardare un po' le esecuzioni programmate)
   workflow_dispatch:
+    inputs:
+      gruppo:
+        description: 'Solo questo gruppo (codice); vuoto = tutti i gruppi attivi'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -15,14 +20,14 @@ concurrency:
 jobs:
   push:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: Notifica i nuovi avvisi della bacheca
-        run: node scripts/bacheca-push.mjs
+        run: node scripts/per-gruppi.mjs node scripts/bacheca-push.mjs
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          GRUPPO_ID: ${{ inputs.gruppo || vars.GRUPPO_ID }}

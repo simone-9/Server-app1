@@ -23,9 +23,10 @@ La Regione Veneto non risponde ai server di GitHub (il controllo andava in timeo
 4. Sostituisci nel repository il file `.github/workflows/monitor-allerte.yml` con quello di questa cartella.
 5. Su GitHub: **Actions → Monitoraggio allerte CFD Veneto → Run workflow**, con "Invia solo un messaggio di prova su Telegram" attivo, poi un avvio normale. Il runner deve comparire come **Idle** in Settings → Actions → Runners.
 
-I segreti (FIREBASE_SERVICE_ACCOUNT, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) restano quelli già impostati su GitHub: non vanno copiati sul Raspberry.
+I segreti (FIREBASE_SERVICE_ACCOUNT, TELEGRAM_BOT_TOKEN) restano quelli già impostati su GitHub: non vanno copiati sul Raspberry.
 
 ## Da sapere
 - Se il Raspberry è spento o senza rete, il controllo **non parte** e non arriva nemmeno l'avviso su Telegram (l'avviso nasce dall'esecuzione stessa). Il sistema ufficiale resta il bollettino della Regione: controlla l'indicatore dell'ultimo aggiornamento nell'app.
 - Per sicurezza: cambia la password predefinita, tieni il sistema aggiornato (`sudo apt update && sudo apt upgrade`) e non esporre il Raspberry a internet.
+- Il workflow ora lancia `node scripts/per-gruppi.mjs python monitor-allerte/monitor_allerte.py` (un giro per ogni gruppo): sul Raspberry serve anche Node 20 (`sudo apt install nodejs` o nodesource) oltre a Python.
 - Per tornare a GitHub: rimetti `runs-on: ubuntu-latest` (e il vecchio blocco `setup-python`) nel workflow.

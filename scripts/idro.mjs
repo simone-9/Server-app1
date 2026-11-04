@@ -31,6 +31,9 @@ if (GRP && GRP.telegram && GRP.telegram.attivo === false) { TOKEN = ''; CHAT = '
 // ID della chat scritto dal gruppo nelle impostazioni dell'app: ha la precedenza sul segreto TELEGRAM_CHAT_ID (il token resta sempre nei segreti)
 else if (GRP && GRP.telegram && GRP.telegram.chatId) CHAT = String(GRP.telegram.chatId);
 // fiume: stazioni del gruppo al posto di quelle del file (solo se non sono già nel file)
+// bacino del Brenta (stazioni extra, pluviometri e Osservatorio del file di configurazione): solo se il fiume del gruppo è tra le stazioni del file
+const BRENTA = !GRP_FIUME || (FIUME_ON && cfg.stazioni.some(x => x.id === GRP_FIUME.rif));
+if (!BRENTA) { cfg.pluviometri = []; cfg.osservatorio = null; }
 if (!FIUME_ON) cfg.stazioni = [];
 else if (GRP_FIUME && GRP_FIUME.rif && !cfg.stazioni.some(x => x.id === GRP_FIUME.rif)) {
   cfg.stazioni = [GRP_FIUME.monte ? { id: GRP_FIUME.monte, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.monteNome || 'monte'}`, allerta: true } : null,

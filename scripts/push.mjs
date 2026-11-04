@@ -115,3 +115,33 @@ export async function leggiConfigGruppo(opzioni = {}) {
     return d ? d.campi : null;
   } catch (e) { console.log('::warning::Impostazioni del gruppo non lette: ' + e.message); return null; }
 }
+
+// Elenco dei gruppi da servire (progetto Firebase condiviso): documenti di «gruppi/» non disattivati e con le impostazioni compilate (almeno il comune).
+// Ritorna [{ id, nome, comune }]. Con GRUPPO_ID impostato (repository dedicato a un solo gruppo, o avvio manuale per un gruppo) ritorna solo quello.
+export async function elencoGruppi(opzioni = {}) {
+  const env = opzioni.env || process.env, f = opzioni.fetch || fetch, k = chiaveServizio(env);
+  if (!k) return [];
+  const tok = await accessToken(k, f), base = `https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents`;
+  const get = async p => { const r = await f(`${base}/${p}`, { headers: { authorization: 'Bearer ' + tok } }); if (r.status === 404) return null; const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(`Lettura di ${p} non riuscita (${r.status})`); return daFs({ mapValue: { fields: j.fields || {} } }); };
+  const solo = (env.GRUPPO_ID || '').trim().toLowerCase();
+  const ids = [];
+  if (solo) ids.push(solo);
+  else {
+    let pag = '';
+    do {
+      const r = await f(`${base}/gruppi?pageSize=300${pag}`, { headers: { authorization: 'Bearer ' + tok } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(`Lettura dell'elenco dei gruppi non riuscita (${r.status}): ` + JSON.stringify(j).slice(0, 200));
+      (j.documents || []).forEach(d => { const c = daFs({ mapValue: { fields: d.fields || {} } }); if (c.attivo !== false) ids.push(d.name.split('/').pop()); });
+      pag = j.nextPageToken ? '&pageToken=' + encodeURIComponent(j.nextPageToken) : '';
+    } while (pag);
+  }
+  const out = [];
+  for (const id of ids) {
+    if (!/^[a-z0-9-]{3,30}$/.test(id) || ['super', 'gruppi', 'admin', 'impostazioni', 'nessuno'].includes(id)) continue;
+    const imp = await get(`gruppi/${id}/impostazioni/gruppo`);
+    if (!imp || imp.attivo === false || !String(imp.comune || '').trim()) { console.log(`Gruppo ${id}: impostazioni non compilate o gruppo disattivato, saltato.`); continue; }
+    out.push({ id, nome: imp.nome || '', comune: imp.comune });
+  }
+  return out;
+}
