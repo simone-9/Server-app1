@@ -24,6 +24,8 @@ GRUPPO = os.environ.get("GRUPPO_ID", "").strip().lower()
 PREF = f"gruppi/{GRUPPO}/" if GRUPPO else ""
 COMUNE = (os.environ.get("COMUNE") or "Curtarolo").strip()
 NOME_ZONA = (os.environ.get("CFD_NOME_ZONA") or "Pianura centrale")
+TELEGRAM_CONSENTITO = True   # il gruppo può spegnere Telegram dall'app (impostazioni del gruppo)
+CFD_ATTIVO = True            # idem per le allerte CFD
 SOGLIA_TELEGRAM = os.environ.get("SOGLIA_TELEGRAM", "ARANCIONE").strip().upper()
 USER_AGENT = "ProtezioneCivile-Monitor/1.0 (monitoraggio allerte, protezione civile comunale)"
 MAX_DOCUMENTI = 6
@@ -203,8 +205,30 @@ def invia_avviso(testo):
     return t or p
 
 
+def applica_config_gruppo(c):
+    """Impostazioni del gruppo scritte dall'app (comune, zona CFD, Telegram sì/no). Hanno la precedenza sulle variabili del repository."""
+    global ZONA, COMUNE, NOME_ZONA, TELEGRAM_CONSENTITO, CFD_ATTIVO
+    if not isinstance(c, dict):
+        return
+    if c.get("comune"):
+        COMUNE = str(c["comune"]).strip()
+    cfd = c.get("cfd") or {}
+    if cfd.get("zona"):
+        ZONA = str(cfd["zona"]).strip().upper()
+        if cfd.get("zonaNome"):
+            NOME_ZONA = str(cfd["zonaNome"]).strip()
+    if cfd.get("attivo") is False:
+        CFD_ATTIVO = False
+    if (c.get("telegram") or {}).get("attivo") is False:
+        TELEGRAM_CONSENTITO = False
+    print(f"Impostazioni del gruppo lette: {COMUNE}, zona CFD {ZONA if CFD_ATTIVO else 'non usata'}, Telegram {'consentito' if TELEGRAM_CONSENTITO else 'spento'}")
+
+
 def invia_telegram(testo):
     import requests
+    if not TELEGRAM_CONSENTITO:
+        print("Telegram disattivato nelle impostazioni del gruppo: messaggio non inviato")
+        return False
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat:
         print("Telegram non configurato: messaggio non inviato")
@@ -371,6 +395,16 @@ def main():
         print("Manca FIREBASE_SERVICE_ACCOUNT")
         return 2
     archivio = ArchivioFirestore()
+    try:
+        if os.environ.get("GRUPPO_CONFIG_FILE"):
+            applica_config_gruppo(json.load(open(os.environ["GRUPPO_CONFIG_FILE"], encoding="utf-8")))
+        else:
+            applica_config_gruppo(archivio.leggi("impostazioni/gruppo"))
+    except Exception as e:
+        print("Impostazioni del gruppo non lette, uso le variabili del repository:", e)
+    if not CFD_ATTIVO:
+        print("Allerte CFD disattivate nelle impostazioni del gruppo: niente da fare.")
+        return 0
     esito = esegui(archivio)
     pulisci_storico(archivio)
     return esito

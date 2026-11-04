@@ -19,8 +19,8 @@ import { readFileSync } from 'node:fs';
 const GRUPPO = (process.env.GRUPPO_ID || '').trim().toLowerCase();
 export const COLLEZIONE = 'richieste_ente';
 const PREF = GRUPPO ? `gruppi/${GRUPPO}/` : '';
-const NOME_ORG = (process.env.NOME_GRUPPO || 'Gruppo comunale di Protezione Civile di Curtarolo').trim();
-const NOME_BREVE = (process.env.NOME_MITTENTE || 'Protezione Civile Curtarolo').trim();
+let NOME_ORG = (process.env.NOME_GRUPPO || 'Gruppo comunale di Protezione Civile di Curtarolo').trim();
+let NOME_BREVE = (process.env.NOME_MITTENTE || 'Protezione Civile Curtarolo').trim();
 const MODELLI_PREDEFINITI = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
 const RE_EMAIL = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]{2,}$/;
 
@@ -62,6 +62,24 @@ function daFs(v) {
   if ('arrayValue' in v) return (v.arrayValue.values || []).map(daFs);
   if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, daFs(x)]));
   return null;
+}
+// Nomi del gruppo dalle impostazioni scritte nell'app (gruppi/<codice>/impostazioni/gruppo); se mancano restano le variabili del repository.
+export function nomiDaConfig(c) {
+  if (!c || typeof c !== 'object') return null;
+  const comune = String(c.comune || '').trim(), nome = String(c.nome || '').trim();
+  if (!comune && !nome) return null;
+  return {
+    org: nome ? (comune && !nome.toLowerCase().includes(comune.toLowerCase()) ? `${nome} di ${comune}` : nome) : `Gruppo comunale di Protezione Civile di ${comune}`,
+    breve: comune ? `Protezione Civile ${comune}` : nome,
+  };
+}
+async function leggiImpostazioniGruppo(ctx) {
+  try {
+    const r = await ctx.f(`${ctx.base}/${PREF}impostazioni/gruppo`, { headers: { authorization: 'Bearer ' + ctx.tok } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return daFs({ mapValue: { fields: j.fields || {} } });
+  } catch (e) { return null; }
 }
 function fsBase(k, env) { return (env.FIRESTORE_BASE || 'https://firestore.googleapis.com/v1') + `/projects/${k.project_id}/databases/(default)/documents`; }
 
@@ -208,6 +226,8 @@ export async function esegui(azione, id, deps = {}) {
   const k = chiaveServizio(env);
   const ctx = { f, env, base: fsBase(k, env), tok: await accessToken(k, f), attesa: deps.attesa };
   const mittente = env.SMTP_USER;
+  const nomi = nomiDaConfig(await leggiImpostazioniGruppo(ctx));
+  if (nomi) { NOME_ORG = nomi.org; NOME_BREVE = nomi.breve; }
 
   if (azione === 'prova') {
     let ok = true;
@@ -255,7 +275,7 @@ export async function esegui(azione, id, deps = {}) {
     try { await scriviRichiesta(ctx, id, { stato: 'Invio in corso', errore: '' }, updateTime); } catch (e) { log(`[invia] ${id}: richiesta già presa in carico`); return false; }
     try {
       const t = deps.trasporto || await creaTrasporto(env);
-      const nome = (env.NOME_MITTENTE || NOME_BREVE).replace(/["<>\r\n]/g, '');
+      const nome = NOME_BREVE.replace(/["<>\r\n]/g, '');
       const logo = deps.logo === undefined ? logoGruppo() : deps.logo;
       const allegati = (logo ? [{ filename: 'logo.png', content: logo, cid: 'logo-gruppo', contentDisposition: 'inline' }] : []).concat(fotoAllegate(r.foto));
       const info = await t.sendMail({ from: `"${nome}" <${mittente}>`, to: a.join(', '), cc: cc.length ? cc.join(', ') : undefined, replyTo: mittente, subject: String(r.oggetto).replace(/[\r\n]+/g, ' ').trim(), text: String(r.corpo), html: corpoHtml(r.corpo, !!logo), attachments: allegati });

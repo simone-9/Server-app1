@@ -2,6 +2,7 @@
 // Legge i dispositivi registrati dall'app nella raccolta Firestore «push_dispositivi» e invia un messaggio a ciascuno.
 // Richiede il segreto FIREBASE_SERVICE_ACCOUNT (JSON della chiave dell'account di servizio). Se manca, non fa nulla.
 import { createSign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 // Più gruppi sullo stesso Firebase: se è impostata GRUPPO_ID i dati stanno sotto «gruppi/<codice>/». Senza, percorsi storici (app 1).
 export const PREFISSO = (process.env.GRUPPO_ID || '').trim() ? 'gruppi/' + process.env.GRUPPO_ID.trim().toLowerCase() + '/' : '';
@@ -101,4 +102,16 @@ export async function scriviDocumento(coll, id, oggetto, opzioni = {}) {
   const r = await f(`https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents/${PREFISSO}${coll}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: JSON.stringify({ fields: aFs(oggetto).mapValue.fields }) });
   if (!r.ok) throw new Error(`Scrittura di ${coll}/${id} non riuscita (${r.status}): ` + (await r.text().catch(() => '')).slice(0, 200));
   return true;
+}
+
+// Impostazioni del gruppo scritte dall'app (Firestore: gruppi/<codice>/impostazioni/gruppo): comune, zona CFD, fiume, Telegram sì/no...
+// Ritorna l'oggetto, oppure null se non ci sono (o non si leggono): in quel caso gli script usano le variabili del repository.
+// GRUPPO_CONFIG_FILE (solo prove): legge le impostazioni da un file JSON invece che da Firestore.
+export async function leggiConfigGruppo(opzioni = {}) {
+  const env = opzioni.env || process.env;
+  if (env.GRUPPO_CONFIG_FILE) { try { return JSON.parse(readFileSync(env.GRUPPO_CONFIG_FILE, 'utf8')); } catch (e) { return null; } }
+  try {
+    const imp = await leggiCollezione('impostazioni', opzioni), d = imp && imp.find(x => x.id === 'gruppo');
+    return d ? d.campi : null;
+  } catch (e) { console.log('::warning::Impostazioni del gruppo non lette: ' + e.message); return null; }
 }

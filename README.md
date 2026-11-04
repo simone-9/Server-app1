@@ -17,6 +17,8 @@ Ogni gruppo ha i suoi dati sotto `gruppi/<codice>/…`: tutti gli script leggono
 **Segreti:** `FIREBASE_SERVICE_ACCOUNT` (chiave JSON dell'account di servizio del progetto Firebase), `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (facoltativi), `SMTP_USER`, `SMTP_PASSWORD`, `GROQ_API_KEY` (richieste agli enti), `OSSERVATORIO_PASSWORD` (solo osservatorio).
 **Variabili:** `GRUPPO_ID` (codice del gruppo, es. `curtarolo`), `COMUNE`, `CFD_ZONA`, `CFD_NOME_ZONA`, `NOME_GRUPPO`, `NOME_MITTENTE`.
 
+**Impostazioni del gruppo da Firestore.** A ogni esecuzione gli script leggono `gruppi/<GRUPPO_ID>/impostazioni/gruppo`, cioè quello che il gruppo ha compilato in *Impostazioni gruppo* nell'app: comune, nome, zona CFD (e se è attiva), fiume e stazioni ARPAV (e se è attivo), «il gruppo usa Telegram». Quindi per un nuovo gruppo bastano `GRUPPO_ID` e `FIREBASE_SERVICE_ACCOUNT`; le variabili `COMUNE`, `CFD_ZONA`, `CFD_NOME_ZONA`, `NOME_GRUPPO`, `NOME_MITTENTE` restano come valori di riserva se le impostazioni non ci sono. Telegram parte solo se ci sono **entrambi** i segreti `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` **e** nell'app è spuntato «usa Telegram»; il token non si scrive mai nell'app. Per altri fiumi le stazioni sono quelle indicate nell'app (codice ARPAV); le stazioni extra e i pluviometri di `config/stazioni.json` valgono per il bacino del Brenta.
+
 ## Cosa sapere
 - Un repository serve **un gruppo** (un `GRUPPO_ID`). Per un altro gruppo si copia il repository e si cambiano variabili e segreti.
 - Le push delle allerte CFD le invia `idro.mjs` leggendo le allerte scritte dal monitor: nel monitor sono spente di proposito (`PUSH_DA_MONITOR=1` le riaccende) per non averle doppie.

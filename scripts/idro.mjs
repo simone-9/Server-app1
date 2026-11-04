@@ -5,18 +5,37 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, mkdtempSync } from 
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inviaPush, chiaveServizio, leggiCollezione, scriviDocumento } from './push.mjs';
+import { inviaPush, chiaveServizio, leggiCollezione, scriviDocumento, leggiConfigGruppo } from './push.mjs';
 
 const SORGENTE = process.env.IDRO_SOURCE_URL || 'https://www.arpa.veneto.it/api/risorse/data-meteo/xml/Ultime48ore.xml';
 const FILE_PROVA = process.env.IDRO_SOURCE_FILE || '';
 const OUT = process.env.OUT_DIR || 'out';
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const CHAT = process.env.TELEGRAM_CHAT_ID || '';
-const DRY = process.env.TELEGRAM_DRY_RUN === '1';
+let TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+let CHAT = process.env.TELEGRAM_CHAT_ID || '';
+let DRY = process.env.TELEGRAM_DRY_RUN === '1';
 const PROVA_PUSH = process.env.TEST_PUSH === '1';   // avvio manuale con «prova_push»: invia solo una notifica push di prova
 const PROVA = process.env.TEST_MESSAGGIO === '1';   // avvio manuale con «prova»: invia un messaggio di test e non tocca lo stato degli avvisi
 const PAGINA_GENERICA = 'https://www.arpa.veneto.it/dati-ambientali/dati-in-diretta/meteo-idro-nivo/idro_prec';
 const cfg = JSON.parse(readFileSync('config/stazioni.json', 'utf8'));
+
+// ---- Impostazioni del gruppo (le stesse dell'app, da Firestore). Se non ci sono si usano le variabili del repository e la configurazione del file.
+const GRP = await leggiConfigGruppo();
+const GRP_FIUME = (GRP && GRP.fiume) || null, GRP_CFD = (GRP && GRP.cfd) || null;
+const COMUNE = (GRP && GRP.comune) || process.env.COMUNE || 'Curtarolo';
+const CFD_ZONA = (GRP_CFD && GRP_CFD.zona) || process.env.CFD_ZONA || 'E1';
+const CFD_ON = !(GRP_CFD && GRP_CFD.attivo === false);
+const FIUME_ON = !(GRP_FIUME && GRP_FIUME.attivo === false);
+if (GRP) console.log(`Impostazioni del gruppo lette: ${COMUNE}, zona CFD ${CFD_ON ? CFD_ZONA : 'non usata'}, fiume ${FIUME_ON ? ((GRP_FIUME && GRP_FIUME.nome) || 'da file') : 'non usato'}, Telegram ${GRP.telegram && GRP.telegram.attivo === false ? 'spento' : 'consentito'}`);
+// Telegram: se il gruppo lo ha disattivato nell'app non si invia nulla, anche se i segreti ci sono
+if (GRP && GRP.telegram && GRP.telegram.attivo === false) { TOKEN = ''; CHAT = ''; DRY = false; }
+// fiume: stazioni del gruppo al posto di quelle del file (solo se non sono già nel file)
+if (!FIUME_ON) cfg.stazioni = [];
+else if (GRP_FIUME && GRP_FIUME.rif && !cfg.stazioni.some(x => x.id === GRP_FIUME.rif)) {
+  cfg.stazioni = [GRP_FIUME.monte ? { id: GRP_FIUME.monte, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.monteNome || 'monte'}`, allerta: true } : null,
+    { id: GRP_FIUME.rif, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.rifNome || 'riferimento'} (${COMUNE})`, allerta: true }].filter(Boolean);
+}
+// zona del bollettino meteo: quella del gruppo (se non è già tra quelle del file)
+if (GRP_CFD && GRP_CFD.zona && !((cfg.bollettino && cfg.bollettino.zone) || []).some(z => z.id === GRP_CFD.zona)) cfg.bollettino = Object.assign({}, cfg.bollettino, { zone: [{ id: GRP_CFD.zona, nome: GRP_CFD.zonaNome || GRP_CFD.zona }] });
 
 const num = x => parseFloat(String(x).replace(',', '.'));
 // ARPAV pubblica in orario solare (UTC+1 fisso)
@@ -341,7 +360,7 @@ for (const s of cfg.stazioni.filter(x => x.allerta)) {
 }
 // ---- Previsione per Limena: stessa stima dell'app (variazione osservata a Barzizza riportata a Limena con tempo di viaggio e coefficiente).
 // Il tempo di viaggio e il coefficiente si leggono dalle impostazioni dell'app (Firestore, impostazioni/idrometria); in prova si possono passare con IDRO_LAG e IDRO_K.
-const ID_MONTE_P = '300005751', ID_RIF_P = '300005777';
+const ID_MONTE_P = GRP_FIUME ? (GRP_FIUME.monte || '') : '300005751', ID_RIF_P = GRP_FIUME ? (GRP_FIUME.rif || '') : '300005777';
 const oraPrev = ms => { const o = oraLocale(ms), [hm, giorno] = o.split(' del '); return giorno === oraLocale(Date.now()).split(' del ')[1] ? hm : `${hm} del ${giorno.slice(0, 5)}`; };
 async function calcolaPrevisione() {
   let lag = parseFloat(process.env.IDRO_LAG || ''), k = parseFloat(process.env.IDRO_K || '');
@@ -385,7 +404,7 @@ if (!PROVA && !PROVA_PUSH) {
           const elenco = attese.filter(s => s.i >= 2).map(s => `🕒 Guardia ${s.i} (${m2(s.g)}): verso le <b>${oraPrev(s.quando)}</b>`).join('\n');
           const nomi = attese.filter(s => s.i >= 2).map(s => 'G' + s.i).join(' e ');
           const testo = `⚠️ <b>PREVISIONE IDROMETRICA · Limena potrebbe superare ${nomi}</b>\n` +
-            `📍 Brenta a Limena (${process.env.COMUNE || 'Curtarolo'}): ora <b>${m2(P.vl)}</b>\n` +
+            `📍 ${(GRP_FIUME && GRP_FIUME.nome) || 'Brenta'} a ${(GRP_FIUME && GRP_FIUME.rifNome) || 'Limena'} (${COMUNE}): ora <b>${m2(P.vl)}</b>\n` +
             `📈 Picco stimato: <b>${m2(P.picco.v)}</b> verso le <b>${oraPrev(P.picco.t)}</b> (+${Math.round(P.aumento * 100)} cm)\n${elenco}\n` +
             `<i>Stima dai livelli già misurati a Barzizza (tempo di viaggio ${String(P.lag).replace('.', ',')} h): indicativa, non considera la pioggia in arrivo. Fonte ARPAV, dati non validati.</i>`;
           if (await telegram(testo)) stato.prev.tg = livTg; else problemi++;
@@ -408,7 +427,7 @@ if (!PROVA && !PROVA_PUSH) {
 // ---- Registro automatico degli eventi di piena (Firestore, raccolta idro_eventi): picchi e orari dei passaggi di soglia a Barzizza e Limena,
 // con il tempo di viaggio osservato tra i due picchi. Un evento si apre quando una delle due stazioni supera G1 e si chiude dopo 6 ore sotto G1.
 async function registroEpisodi() {
-  const ID_MONTE = '300005751', ID_RIF = '300005777', ST = [[ID_MONTE, 'Barzizza'], [ID_RIF, 'Limena']], dd = {};
+  const ID_MONTE = GRP_FIUME ? (GRP_FIUME.monte || '') : '300005751', ID_RIF = GRP_FIUME ? (GRP_FIUME.rif || '') : '300005777', ST = [[ID_MONTE, (GRP_FIUME && GRP_FIUME.monteNome) || 'Barzizza'], [ID_RIF, (GRP_FIUME && GRP_FIUME.rifNome) || 'Limena']].filter(x => x[0]), dd = {};
   for (const [id, nome] of ST) { const x = dati.st[id]; if (!x || !x.dati.length || !x.g || x.g[0] == null) return; dd[id] = { nome, g: x.g, serie: x.dati }; }
   const ora = Date.now(), ultimoT = Math.max(...ST.map(([id]) => dd[id].serie[dd[id].serie.length - 1][0]));
   let ep = stato.episodio || null;
@@ -446,7 +465,7 @@ async function registroEpisodi() {
 }
 if (!PROVA && !PROVA_PUSH) { try { await registroEpisodi(); } catch (e) { console.log('::warning::Registro eventi non aggiornato: ' + e.message); } }
 // notifica push quando sale il livello dell'allerta CFD (zona E1) per oggi o domani: legge lo storico scritto dal monitoraggio automatico
-if (pushAttivo && !PROVA && !PROVA_PUSH) {
+if (pushAttivo && CFD_ON && !PROVA && !PROVA_PUSH) {
   try {
     const RANGO = { VERDE: 0, GIALLA: 1, ARANCIONE: 2, ROSSA: 3 };
     const dmy = d => { const p = Object.fromEntries(new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'numeric', year: 'numeric' }).formatToParts(d).map(x => [x.type, x.value])); return `${+p.day}/${+p.month}/${p.year}`; };
@@ -461,7 +480,7 @@ if (pushAttivo && !PROVA && !PROVA_PUSH) {
       const prec = cfd[data] != null ? cfd[data] : 0;
       if (!primo && rango > prec) {
         const att = Object.values(ult.rischi || {}).filter(v => v && v.livello && v.livello !== 'VERDE').map(v => `${v.nome}: ${v.livello}`);
-        const e = await inviaPush({ titolo: `Allerta ${ult.livello} per ${quando}`, testo: `Zona ${process.env.CFD_ZONA || 'E1'} ${process.env.COMUNE || 'Curtarolo'}${att.length ? ' · ' + att.join(', ') : ''}`, tag: `cfd-${data.replace(/\//g, '-')}-${rango}`, icona: '⚠️' });
+        const e = await inviaPush({ titolo: `Allerta ${ult.livello} per ${quando}`, testo: `Zona ${CFD_ZONA} ${COMUNE}${att.length ? ' · ' + att.join(', ') : ''}`, tag: `cfd-${data.replace(/\//g, '-')}-${rango}`, icona: '⚠️' });
         console.log(`Push allerta CFD ${ult.livello} (${quando}): ${e.inviati}/${e.dispositivi} dispositivi`);
       }
       cfd[data] = rango; nuovo[data] = rango; stato.push.cfd = cfd;   // livello sceso: si aggiorna senza avvisare
