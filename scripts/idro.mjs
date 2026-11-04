@@ -54,6 +54,17 @@ else if (GRP_FIUME && GRP_FIUME.rif && !cfg.stazioni.some(x => x.id === GRP_FIUM
   cfg.stazioni = [GRP_FIUME.monte ? { id: GRP_FIUME.monte, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.monteNome || 'monte'}`, allerta: true } : null,
     { id: GRP_FIUME.rif, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.rifNome || 'riferimento'} (${COMUNE})`, allerta: true }].filter(Boolean);
 }
+// Stazioni ARPAV scelte dal gruppo nelle impostazioni (per provincia): restano le stazioni di allerta (monte e riferimento) più quelle scelte; i pluviometri sono solo quelli scelti
+const ARPAV_SCELTE = GRP && GRP.arpav && ((GRP.arpav.livello || []).length || (GRP.arpav.pioggia || []).length) ? GRP.arpav : null;
+if (ARPAV_SCELTE) {
+  const el = l => (Array.isArray(l) ? l : []).filter(x => x && /^\d{5,12}$/.test(String(x.id))).slice(0, 40).map(x => ({ id: String(x.id), nome: String(x.nome || x.id).slice(0, 80) }));
+  const liv = el(ARPAV_SCELTE.livello), pio = el(ARPAV_SCELTE.pioggia);
+  const prima = cfg.stazioni, base = prima.filter(x => x.allerta);
+  cfg.stazioni = base.concat(liv.filter(x => !base.some(b => b.id === x.id)).map(x => prima.find(p => p.id === x.id) || x));
+  const plPrima = cfg.pluviometri || [];
+  cfg.pluviometri = pio.map(x => plPrima.find(p => p.id === x.id) || x);
+  console.log(`ARPAV: stazioni scelte dal gruppo (${liv.length} livelli, ${pio.length} pluviometri; di allerta ${base.length})`);
+}
 // zona del bollettino meteo: quella del gruppo (se non è già tra quelle del file)
 if (GRP_CFD && GRP_CFD.zona && !((cfg.bollettino && cfg.bollettino.zone) || []).some(z => z.id === GRP_CFD.zona)) cfg.bollettino = Object.assign({}, cfg.bollettino, { zone: [{ id: GRP_CFD.zona, nome: GRP_CFD.zonaNome || GRP_CFD.zona }] });
 

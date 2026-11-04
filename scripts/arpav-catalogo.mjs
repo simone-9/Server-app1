@@ -35,7 +35,7 @@ async function scarica() {
 const xml = await scarica();
 const campo = (s, n) => { const m = s.match(new RegExp('<' + n + '>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)\\s*(?:\\]\\]>)?\\s*</' + n + '>')); return m ? m[1].trim() : ''; };
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
-const SIGLE = { BL: 'Belluno', PD: 'Padova', RO: 'Rovigo', TV: 'Treviso', VE: 'Venezia', VR: 'Verona', VI: 'Vicenza', TN: 'Trento', BZ: 'Bolzano', UD: 'Udine', PN: 'Pordenone', GO: 'Gorizia', TS: 'Trieste', MN: 'Mantova', FE: 'Ferrara' };
+const SIGLE = { BL: 'Belluno', PD: 'Padova', RO: 'Rovigo', TV: 'Treviso', VE: 'Venezia', VR: 'Verona', VI: 'Vicenza', TN: 'Trento', BZ: 'Bolzano', UD: 'Udine', PN: 'Pordenone', GO: 'Gorizia', TS: 'Trieste', MN: 'Mantova', FE: 'Ferrara', PC: 'Piacenza', RE: 'Reggio Emilia', BO: 'Bologna', MO: 'Modena', PR: 'Parma', RA: 'Ravenna' };
 const pulisciProv = t => String(t || '').replace(/^(Citt[àa] metropolitana|Provincia|Libero consorzio comunale)\s+(di|del|della|dell')\s*/i, '').trim();
 const provDaTag = v => { const t = String(v || '').trim(); return SIGLE[t.toUpperCase()] || pulisciProv(t); };
 const titolo = s => s.replace(/\s+/g, ' ').trim();
