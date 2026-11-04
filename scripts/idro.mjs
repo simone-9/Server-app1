@@ -33,7 +33,16 @@ else if (GRP && GRP.telegram && GRP.telegram.chatId) CHAT = String(GRP.telegram.
 // fiume: stazioni del gruppo al posto di quelle del file (solo se non sono già nel file)
 // bacino del Brenta (stazioni extra, pluviometri e Osservatorio del file di configurazione): solo se il fiume del gruppo è tra le stazioni del file
 const BRENTA = !GRP_FIUME || (FIUME_ON && cfg.stazioni.some(x => x.id === GRP_FIUME.rif));
-if (!BRENTA) { cfg.pluviometri = []; cfg.osservatorio = null; }
+if (!BRENTA) cfg.pluviometri = [];
+// Bacino dell'Osservatorio scelto dal gruppo nelle impostazioni: si leggono solo le stazioni di quel bacino.
+// Senza impostazioni del gruppo, o con impostazioni vecchie senza la scelta, vale il comportamento storico (Brenta se il fiume è quello del file).
+const OSS_BACINO = !GRP_FIUME ? 'Brenta Bacchiglione' : (GRP_FIUME.osservatorio !== undefined ? GRP_FIUME.osservatorio : (BRENTA ? 'Brenta Bacchiglione' : ''));
+if (cfg.osservatorio) {
+  const def = OSS_BACINO && cfg.osservatorio.bacini && cfg.osservatorio.bacini[OSS_BACINO];
+  if (!OSS_BACINO || (cfg.osservatorio.bacini && !def)) cfg.osservatorio = null;
+  else if (def && !def.elenco) cfg.osservatorio = Object.assign({}, cfg.osservatorio, { bacino: OSS_BACINO, fiumi: def.fiumi || [], livello: [], pioggia: def.pioggia || [], dinamico: true });
+  if (cfg.osservatorio) console.log(`Osservatorio: bacino «${OSS_BACINO}»${cfg.osservatorio.dinamico ? ' (stazioni dal nome del fiume)' : ''}`);
+}
 if (!FIUME_ON) cfg.stazioni = [];
 else if (GRP_FIUME && GRP_FIUME.rif && !cfg.stazioni.some(x => x.id === GRP_FIUME.rif)) {
   cfg.stazioni = [GRP_FIUME.monte ? { id: GRP_FIUME.monte, nome: `${GRP_FIUME.nome || 'Fiume'} a ${GRP_FIUME.monteNome || 'monte'}`, allerta: true } : null,
@@ -237,6 +246,26 @@ async function osservatorio(c) {
   const token = String(typeof r0 === 'string' ? r0 : (r0.token || '')).replace(/^"|"$/g, '').replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new Error('token non ottenuto');
   const H = { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' } };
+  if (c.dinamico) {   // bacino diverso dal Brenta: livelli = stazioni il cui nome comincia con il nome del fiume («Piave a Cortellazzo»)
+    const esc = t => String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('^(' + (c.fiumi || []).map(esc).join('|') + ')\\s+(a|ad|al|alla|allo|ai|agli|presso|di|in)\\s', 'i');
+    const trovate = new Map();
+    try {
+      const reti = await chiama('/api/networks', H);
+      for (const rete of Array.isArray(reti) ? reti : []) {
+        const rid = rete.id ?? rete.idrete ?? rete.networkId;
+        let st = [];
+        try { st = await chiama(`/api/networks/${rid}/stations`, H); } catch (e) { console.log(`::warning::Osservatorio: stazioni della rete ${rid} non lette: ${e.message}`); }
+        for (const x of Array.isArray(st) ? st : []) {
+          const s0 = x && x.station ? x.station : x, nome = String((s0 && (s0.descr || s0.nome || s0.codice)) || '').replace(/\s*-?\s*\(DAO\)\s*$/i, '').replace(/\s+[A-Z]{1,3}(\.[A-Z0-9]{1,4}){2,}\s*$/, '').trim();
+          if (s0 && s0.id != null && c.fiumi.length && re.test(nome)) trovate.set(s0.id, nome);
+        }
+      }
+    } catch (e) { console.log('::warning::Osservatorio: elenco stazioni non letto: ' + e.message); }
+    c = Object.assign({}, c, { livello: [...trovate].map(([id, nome]) => ({ id, nome })) });
+    console.log(`Osservatorio: ${c.livello.length} stazioni per «${c.bacino}»${c.pioggia.length ? ' + ' + c.pioggia.length + ' pluviometri' : ''}`);
+    if (!c.livello.length && !c.pioggia.length) return null;
+  }
   const p2 = n => String(n).padStart(2, '0');
   const fmt = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`; };
   const solare = Date.now() + 3600000;   // le date del servizio sono in ora solare (UTC+1), come ARPAV

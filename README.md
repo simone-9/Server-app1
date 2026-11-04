@@ -104,6 +104,8 @@ se due avvii arrivano insieme, il blocco `concurrency` del flusso li mette in fi
 Ad ogni esecuzione, al massimo una volta ogni 6 ore, i dati ARPAV letti (livello e portata di ogni stazione, pioggia dei pluviometri) vengono aggiunti a file CSV mensili nel ramo `archivio`:
 `dati/<id-stazione>/AAAA-MM.csv` (istante UTC, livello in m, portata in m³/s) e `dati/pioggia-<id>/AAAA-MM.csv` (pioggia cumulata giornaliera in mm). `indice.json` elenca i nomi delle stazioni.
 Il file ARPAV contiene solo le ultime 48 ore, quindi basta che il flusso giri almeno una volta ogni 2 giorni per non perdere nulla. Serve a calibrare in futuro il tempo di viaggio della piena da Barzizza a Limena con piene reali.
+**Osservatorio Alpi Orientali:** il gruppo sceglie il bacino (Adige, Brenta Bacchiglione, Lemene, Livenza, Piave, Tagliamento) in Impostazioni gruppo → Fiume e idrometria. Lo script mostra solo le stazioni di quel bacino: per «Brenta Bacchiglione» usa gli elenchi di `config/stazioni.json`, per gli altri bacini legge l'elenco dall'Osservatorio e tiene i livelli delle stazioni il cui nome comincia con il nome del fiume (per esempio «Piave a …»); i pluviometri di questi bacini si aggiungono in `osservatorio.bacini.<bacino>.pioggia` (gli id si trovano con il workflow «Elenco stazioni Osservatorio»). Servono i segreti `OSSERVATORIO_USER` e `OSSERVATORIO_PASSWORD`.
+
 I dati dell'Osservatorio non vengono archiviati (sono scaricabili a richiesta dal loro storico). I dati ARPAV sono CC BY 4.0, automatici e non validati.
 
 ### Analisi dell'archivio

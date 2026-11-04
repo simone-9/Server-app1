@@ -149,6 +149,42 @@
         "id": 1200,
         "nome": "Malga Portule (Altopiano)"
       }
-    ]
+    ],
+    "_bacini": "Bacini dell'Osservatorio che il gruppo sceglie nelle Impostazioni gruppo. 'Brenta Bacchiglione' usa gli elenchi livello/pioggia qui sopra. Per gli altri bacini lo script legge l'elenco delle stazioni dall'Osservatorio e tiene i livelli delle stazioni il cui nome comincia con uno dei 'fiumi' (es. 'Piave a Cortellazzo'); i pluviometri si aggiungono a mano in 'pioggia' del bacino (id dall'elenco: workflow «Elenco stazioni Osservatorio»).",
+    "bacini": {
+      "Adige": {
+        "fiumi": [
+          "Adige"
+        ],
+        "pioggia": []
+      },
+      "Brenta Bacchiglione": {
+        "elenco": true
+      },
+      "Lemene": {
+        "fiumi": [
+          "Lemene"
+        ],
+        "pioggia": []
+      },
+      "Livenza": {
+        "fiumi": [
+          "Livenza"
+        ],
+        "pioggia": []
+      },
+      "Piave": {
+        "fiumi": [
+          "Piave"
+        ],
+        "pioggia": []
+      },
+      "Tagliamento": {
+        "fiumi": [
+          "Tagliamento"
+        ],
+        "pioggia": []
+      }
+    }
   }
 }
