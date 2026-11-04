@@ -1,10 +1,10 @@
-// Richieste agli enti: bozza della lettera scritta da un'AI (Groq) e invio dalla casella Gmail del gruppo.
+// Richieste agli enti: bozza della lettera scritta da un'AI (Groq) e invio dalla casella email di servizio del gruppo (Gmail di default, altro provider con SMTP_HOST/SMTP_PORT).
 //
 //   node scripts/ente-mail.mjs bozza <id>    legge la richiesta dalla raccolta Firestore «richieste_ente», genera oggetto e testo
 //   node scripts/ente-mail.mjs invia <id>    invia la mail (solo se l'amministratore ha premuto «Invia» nell'app)
-//   node scripts/ente-mail.mjs prova         controlla chiave Firestore, chiave Groq e accesso a Gmail (invia una mail di prova a se stessa)
+//   node scripts/ente-mail.mjs prova         controlla chiave Firestore, chiave Groq e accesso alla casella email (invia una mail di prova a se stessa)
 //
-// Segreti richiesti: FIREBASE_SERVICE_ACCOUNT, GROQ_API_KEY, SMTP_USER, SMTP_PASSWORD (password per app di Gmail).
+// Segreti richiesti: FIREBASE_SERVICE_ACCOUNT, GROQ_API_KEY, SMTP_USER, SMTP_PASSWORD (password per app di Gmail, o password SMTP del provider). Altro provider: variabili SMTP_HOST e SMTP_PORT (465 SSL o 587 STARTTLS).
 // Facoltativi (variabili del repository): GROQ_MODEL, NOME_MITTENTE, MAX_INVII_24H.
 //
 // PRIVACY: i log di GitHub non contengono mai testi, indirizzi o nomi: solo l'ID della richiesta e l'esito.
@@ -212,10 +212,10 @@ async function creaTrasporto(env) {
 }
 export function spiegaErroreMail(e) {
   const c = String(e?.code || ''), rc = Number(e?.responseCode) || 0;
-  if (c === 'EAUTH' || rc === 535) return 'Gmail ha rifiutato l\'accesso: controlla la password per app (SMTP_PASSWORD) e gli avvisi di sicurezza dell\'account Google';
-  if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET', 'EDNS'].includes(c)) return 'Collegamento a Gmail non riuscito: riprova tra poco';
+  if (c === 'EAUTH' || rc === 535) return 'Il server di posta ha rifiutato l\'accesso: controlla utente e password (SMTP_USER, SMTP_PASSWORD; per Gmail serve la password per app), host e porta (SMTP_HOST, SMTP_PORT) e gli avvisi di sicurezza dell\'account';
+  if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET', 'EDNS'].includes(c)) return 'Collegamento al server di posta non riuscito: controlla SMTP_HOST e SMTP_PORT o riprova tra poco';
   if (rc >= 550 && rc < 560) return 'Destinatario rifiutato dal server di posta (' + rc + ')';
-  if (rc === 421 || rc === 450 || rc === 452) return 'Gmail ha rimandato l\'invio (limite temporaneo): riprova più tardi';
+  if (rc === 421 || rc === 450 || rc === 452) return 'Il server di posta ha rimandato l\'invio (limite temporaneo): riprova più tardi';
   return 'Invio non riuscito' + (c ? ' (' + c.slice(0, 30) + ')' : '');
 }
 
@@ -233,7 +233,7 @@ export async function esegui(azione, id, deps = {}) {
     let ok = true;
     log('Firestore: accesso riuscito');
     try { const r = await chiamaGroq(ctx, [{ role: 'user', content: 'Rispondi solo con la parola OK.' }]); log('Groq: risposta ricevuta dal modello ' + r.modello); } catch (e) { ok = false; log('Groq: ERRORE - ' + e.message); }
-    try { const t = deps.trasporto || await creaTrasporto(env); if (t.verify) await t.verify(); await t.sendMail({ from: mittente, to: mittente, subject: 'Prova invio richieste agli enti', text: 'Questa è una mail di prova: l\'invio dalla casella del gruppo funziona.' }); log('Gmail: mail di prova inviata alla casella del gruppo'); } catch (e) { ok = false; log('Gmail: ERRORE - ' + spiegaErroreMail(e)); }
+    try { const t = deps.trasporto || await creaTrasporto(env); if (t.verify) await t.verify(); await t.sendMail({ from: mittente, to: mittente, subject: 'Prova invio richieste agli enti', text: 'Questa è una mail di prova: l\'invio dalla casella del gruppo funziona.' }); log('Posta: mail di prova inviata alla casella del gruppo'); } catch (e) { ok = false; log('Posta: ERRORE - ' + spiegaErroreMail(e)); }
     return ok;
   }
 

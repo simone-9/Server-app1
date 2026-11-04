@@ -23,6 +23,7 @@ App (Admin) ──salva la richiesta──▶ Firestore «richieste_ente»
 3. **Data Controls → attiva «Zero Data Retention»** (così Groq non conserva nemmeno i log temporanei).
 
 ## 3. Gmail del gruppo (password per app)
+È l'impostazione predefinita. Con un altro provider di posta (account con SMTP abilitato) si usano `SMTP_USER` e `SMTP_PASSWORD` del provider e, tra le **variabili** del repository, `SMTP_HOST` (per esempio `smtp.provider.it`) e `SMTP_PORT` (`465` SSL oppure `587` STARTTLS). Senza queste due variabili si usa Gmail.
 1. Sull'account `protezione.civile.curtarolo@gmail.com` attiva la **verifica in due passaggi** (myaccount.google.com → Sicurezza). Scegli un telefono che non cambi con le persone e conserva i **codici di backup**.
 2. Vai su myaccount.google.com/apppasswords, crea una password per app chiamata «Richieste enti». Copia le 16 lettere (senza spazi).
 3. Se si cambia la password dell'account, le password per app vengono revocate: va rifatta e aggiornata nei segreti.
@@ -53,7 +54,7 @@ Pubblica il nuovo `firestore.rules` (aggiunge `richieste_ente` e `config_privata
 
 ## 8. Nell'app
 1. Menu **Segnalazioni e richieste agli enti → Lettere agli enti → Impostazioni invio**: proprietario (il tuo utente GitHub), repository (`ente-mail`), file `ente-mail.yml`, ramo `main` (o quello predefinito del repo), token. **Salva**.
-2. **Prova il collegamento**, poi apri GitHub → Actions: dopo circa un minuto il registro deve dire «Firestore: accesso riuscito», «Groq: risposta ricevuta» e «Gmail: mail di prova inviata». Arriva anche una mail di prova alla casella del gruppo.
+2. **Prova il collegamento**, poi apri GitHub → Actions: dopo circa un minuto il registro deve dire «Firestore: accesso riuscito», «Groq: risposta ricevuta» e «Posta: mail di prova inviata». Arriva anche una mail di prova alla casella del gruppo.
 3. Poi **Nuova richiesta**: compila, «Salva e scrivi la bozza», aspetta la bozza, correggila, **Invia dalla casella del gruppo**.
 
 ## Cosa arriva a chi
@@ -71,7 +72,7 @@ Pubblica il nuovo `firestore.rules` (aggiunge `richieste_ente` e `config_privata
 | Il ramo indicato non esiste | Metti il nome esatto del ramo predefinito (spesso `main`) |
 | Nessun modello Groq ha risposto / chiave Groq non valida | Controlla `GROQ_API_KEY`; in `GROQ_MODEL` metti un modello presente nella console Groq |
 | Limite di richieste Groq raggiunto | Aspetta qualche minuto e premi «Riscrivi con l'AI» |
-| Gmail ha rifiutato l'accesso | Password per app errata o revocata, oppure avviso di sicurezza di Google: apri la posta dell'account, conferma «Sì, ero io» e ripeti |
+| Il server di posta ha rifiutato l'accesso | Password per app errata o revocata, oppure avviso di sicurezza di Google: apri la posta dell'account, conferma «Sì, ero io» e ripeti |
 | Limite di 20 invii nelle ultime 24 ore | Alza `MAX_INVII_24H` oppure attendi |
 | «Invio in corso» fermo da oltre 5 minuti | Controlla la posta inviata del gruppo: se la mail non c'è, usa «reimposta la richiesta» e riprova |
 
