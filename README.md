@@ -9,6 +9,7 @@ Ogni gruppo ha i suoi dati sotto `gruppi/<codice>/…`: tutti gli script leggono
 | Push dei nuovi avvisi della bacheca | `bacheca-push.yml` | `scripts/bacheca-push.mjs` |
 | Richieste agli enti (bozza con Groq, invio email) | `ente-mail.yml` | `scripts/ente-mail.mjs` |
 | Lettura del bollettino CFD Veneto | `monitor-allerte.yml` | `monitor-allerte/monitor_allerte.py` |
+| Eliminazione degli account di un gruppo cancellato da Firebase Authentication (avviata dall'app dal super admin, o a mano) | `elimina-account.yml` | `scripts/elimina-account.mjs` |
 | Osservatorio, archivio, analisi (specifici del Brenta) | `osservatorio-*.yml`, `analisi-*.yml` | `scripts/…` |
 
 `scripts/push.mjs` è il modulo comune per Firestore e per le notifiche push (Firebase Cloud Messaging): è lì che si applica `GRUPPO_ID`.
