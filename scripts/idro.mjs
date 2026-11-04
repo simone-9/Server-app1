@@ -127,19 +127,32 @@ const CFD_URL = 'https://www.regione.veneto.it/web/protezione-civile/cfd';
 const CLASSI_PIOGGIA = { '-': 'assente', '1': '<10 mm', '2': '10-30 mm', '3': '30-60 mm', '4': '>60 mm' };
 const MESI = { gennaio: 1, febbraio: 2, marzo: 3, aprile: 4, maggio: 5, giugno: 6, luglio: 7, agosto: 8, settembre: 9, ottobre: 10, novembre: 11, dicembre: 12 };
 
+// Link ai bollettini (BVM_...) e agli avvisi (AVM_...) nella pagina del CFD, dal più recente.
+// La pagina li elenca già dal più recente: si usa quell'ordine e NON la data nel nome del file, perché a volte il nome ha un errore
+// (es. "AVM_2611101" per l'avviso del 1 novembre) e ordinando per nome un file sbagliato restava «il più recente» per giorni.
+export function trovaLinkBollettino(pagina, base = 'https://www.regione.veneto.it/web/protezione-civile/cfd') {
+  const visti = new Set(), out = [];
+  for (const m of String(pagina).matchAll(/href=["']([^"']*(?:BVM|AVM)_(\d{5,8})[^"']*)["']/gi)) {
+    const url = new URL(m[1].replace(/&amp;/g, '&'), base).href;
+    if (visti.has(url)) continue;
+    visti.add(url);
+    out.push({ url, d: m[2], avviso: /AVM_/i.test(m[1]) });
+  }
+  return out;
+}
 async function pdfBollettino() {
   if (process.env.BVM_SOURCE_FILE) return { buf: readFileSync(process.env.BVM_SOURCE_FILE), url: '' };
   const h = { 'User-Agent': 'idrometria-protezione-civile-curtarolo' };
   const pagina = await (await fetch(CFD_URL, { headers: h, signal: AbortSignal.timeout(45000) })).text();
   // il nome del file può essere seguito da altro nell'indirizzo (es. ".pdf/codice?t=..."): si cerca BVM_aammgg (bollettino) o AVM_aammgg (avviso) ovunque nel link
-  const link = [...pagina.matchAll(/href=["']([^"']*(?:BVM|AVM)_(\d{6})[^"']*)["']/gi)].map(m => ({ url: new URL(m[1].replace(/&amp;/g, '&'), CFD_URL).href, d: m[2], avviso: /AVM_/i.test(m[1]) }));
+  const link = trovaLinkBollettino(pagina);
   if (!link.length) {
     const visti = [...pagina.matchAll(/href=["']([^"']*(?:\.pdf|documents|vigilanza)[^"']*)["']/gi)].map(m => m[1]);
     console.log(`::warning::Pagina CFD letta (${pagina.length} caratteri), link a documenti/PDF visti: ${visti.length}. Esempi: ${visti.slice(0, 8).join(' | ') || 'nessuno'}`);
     throw new Error('nessun bollettino/avviso BVM/AVM trovato nella pagina del CFD');
   }
-  link.sort((a, b) => a.d.localeCompare(b.d) || (a.avviso - b.avviso));   // il più recente; a parità di data l'avviso (aggiorna il bollettino)
-  const l = link[link.length - 1];
+  const l = link[0];
+  console.log('Bollettino scelto: ' + l.url.split('/').slice(-2)[0]);
   const r = await fetch(l.url, { headers: h, signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error('bollettino: risposta ' + r.status);
   return { buf: Buffer.from(await r.arrayBuffer()), url: l.url };
