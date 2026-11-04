@@ -1,0 +1,53 @@
+name: Richieste agli enti
+
+# Avviato dall'app (pagina «Richieste agli enti»): non parte da solo.
+# Gli input sono pubblici nel log dell'esecuzione: contengono solo il tipo di azione e l'ID della richiesta,
+# mai testi, indirizzi o nomi.
+on:
+  workflow_dispatch:
+    inputs:
+      azione:
+        description: 'bozza = genera il testo con Groq; invia = spedisce la mail; prova = controlla Firestore, Groq e Gmail'
+        type: choice
+        options: [bozza, invia, prova]
+        default: prova
+      id:
+        description: 'ID della richiesta (vuoto per «prova»)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ente-mail
+  cancel-in-progress: false
+
+jobs:
+  ente:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Installa il modulo per la posta
+        run: npm install --no-save --no-audit --no-fund nodemailer@6
+
+      - name: Esegui
+        run: node scripts/ente-mail.mjs
+        env:
+          AZIONE: ${{ inputs.azione }}
+          ID_RICHIESTA: ${{ inputs.id }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          NOME_MITTENTE: ${{ vars.NOME_MITTENTE }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          NOME_GRUPPO: ${{ vars.NOME_GRUPPO }}
+          MAX_INVII_24H: ${{ vars.MAX_INVII_24H }}

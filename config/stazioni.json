@@ -1,0 +1,154 @@
+{
+  "_nota": "Elenco delle stazioni pubblicate per l'app (id = codice del sensore di livello ARPAV). 'allerta': true = se supera G2 o G3 parte il messaggio Telegram. 'link' = pagina ARPAV della stazione (incolla qui l'indirizzo esatto copiato dal sito ARPAV).",
+  "isteresi": 0.05,
+  "stazioni": [
+    {
+      "id": "300011312",
+      "nome": "Brenta a Maso della Costa (Caldonazzo, TN)"
+    },
+    {
+      "id": "300011337",
+      "nome": "Brenta a Levico, Ponte Cervia (TN)",
+      "portata": "300011336"
+    },
+    {
+      "id": "300011350",
+      "nome": "Brenta a Ospedaletto (TN)"
+    },
+    {
+      "id": "300011353",
+      "nome": "Brenta a Ponte Zaccon (Roncegno, TN)",
+      "portata": "300011352"
+    },
+    {
+      "id": "300005953",
+      "nome": "Brenta a Borgo Valsugana (TN)",
+      "portata": "300011310"
+    },
+    {
+      "id": "300011331",
+      "nome": "Cismon a Fiera di Primiero (TN, affluente)",
+      "portata": "300011330"
+    },
+    {
+      "id": "300005949",
+      "nome": "Brenta a Ponte Filippini (Grigno, TN)",
+      "portata": "300007450"
+    },
+    {
+      "id": "300006028",
+      "nome": "Brenta a Enego",
+      "portata": "300006908"
+    },
+    {
+      "id": "300005751",
+      "nome": "Brenta a Barzizza (Bassano del Grappa)",
+      "allerta": true,
+      "link": "https://www.arpa.veneto.it/dati-ambientali/dati-in-diretta/meteo-idro-nivo/idro_prec?codseqst=300001722&focus=LIDRO",
+      "portata": "300006188"
+    },
+    {
+      "id": "300005777",
+      "nome": "Brenta a Limena (Curtarolo)",
+      "allerta": true,
+      "link": "https://www.arpa.veneto.it/dati-ambientali/dati-in-diretta/meteo-idro-nivo/idro_prec?codseqst=300001741&focus=LIDRO"
+    },
+    {
+      "id": "300005833",
+      "nome": "Brenta a Stra (Vigonovo, a valle)"
+    },
+    {
+      "id": "300015468",
+      "nome": "Brenta a Vigonovo (a valle)",
+      "portata": "300015968"
+    }
+  ],
+  "bollettino": {
+    "_nota": "Zone di allerta del Bollettino di vigilanza meteorologica (CFD Veneto) mostrate nell'app: B2 e B3 sono le zone a monte nel bacino del Brenta, E1 è Curtarolo.",
+    "zone": [
+      {
+        "id": "B2",
+        "nome": "Prealpi vicentine · Altopiano dei Sette Comuni"
+      },
+      {
+        "id": "B3",
+        "nome": "Pedemontana e alta pianura centrale"
+      },
+      {
+        "id": "E1",
+        "nome": "Pianura centrale (Curtarolo)"
+      }
+    ]
+  },
+  "pluviometri": [
+    {
+      "id": "300016778",
+      "nome": "Padova Voltabarozzo (Bacchiglione)"
+    },
+    {
+      "id": "300005763",
+      "nome": "Castelfranco Veneto (Muson dei Sassi)"
+    },
+    {
+      "id": "300005808",
+      "nome": "Vicenza S. Agostino (Retrone)"
+    }
+  ],
+  "osservatorio": {
+    "_nota": "Osservatorio delle Alpi Orientali (API Export Data, serve account). Per spegnere la lettura metti attivo a false. I dati sono in ora solare; la pioggia arriva al minuto e viene sommata ogni 10 minuti.",
+    "attivo": true,
+    "base": "https://www.amicoalpiorientali.eu/CoDataService",
+    "livello": [
+      {
+        "id": 1154,
+        "nome": "Brenta a Campo San Martino"
+      },
+      {
+        "id": 1167,
+        "nome": "Cismon a Cismon del Grappa"
+      },
+      {
+        "id": 1155,
+        "nome": "Cismon a Fonzaso"
+      },
+      {
+        "id": 1173,
+        "nome": "Valgadena a Valstagna"
+      }
+    ],
+    "pioggia": [
+      {
+        "id": 1174,
+        "nome": "Arsiè"
+      },
+      {
+        "id": 1172,
+        "nome": "San Nazario (Valsugana)"
+      },
+      {
+        "id": 1157,
+        "nome": "Foza (Altopiano)"
+      },
+      {
+        "id": 10179,
+        "nome": "Rubbio (Altopiano)"
+      },
+      {
+        "id": 1167,
+        "nome": "Cismon del Grappa"
+      },
+      {
+        "id": 1198,
+        "nome": "Gallio Campomulo (Altopiano)"
+      },
+      {
+        "id": 1206,
+        "nome": "Tresché Conca (Altopiano)"
+      },
+      {
+        "id": 1200,
+        "nome": "Malga Portule (Altopiano)"
+      }
+    ]
+  }
+}

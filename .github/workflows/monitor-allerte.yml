@@ -1,0 +1,46 @@
+name: Monitoraggio allerte CFD Veneto
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"     # ogni 10 minuti, 24 ore su 24
+  workflow_dispatch:            # avvio manuale dal pulsante "Run workflow"
+    inputs:
+      test_telegram:
+        description: "Invia solo un messaggio di prova su Telegram"
+        type: boolean
+        default: false
+      rielabora:
+        description: "Rielabora i bollettini piu' recenti e riscrive le allerte nello storico"
+        type: boolean
+        default: false
+
+concurrency:
+  group: monitor-allerte
+  cancel-in-progress: false
+
+jobs:
+  controlla:
+    # Se la Regione Veneto blocca gli indirizzi di GitHub, usa un runner a casa: vedi monitor-allerte/LEGGIMI-runner.md
+    # (in quel caso sostituisci la riga sotto con: runs-on: [self-hosted, monitor-allerte]).
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: monitor-allerte/requirements.txt
+      - run: pip install -r monitor-allerte/requirements.txt
+      - name: Controlla il CFD e aggiorna Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_TELEGRAM: ${{ inputs.test_telegram }}
+          RIELABORA: ${{ inputs.rielabora }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          COMUNE: ${{ vars.COMUNE }}
+          CFD_ZONA: ${{ vars.CFD_ZONA }}
+          CFD_NOME_ZONA: ${{ vars.CFD_NOME_ZONA }}
+        run: python monitor-allerte/monitor_allerte.py

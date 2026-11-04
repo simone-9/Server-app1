@@ -1,0 +1,96 @@
+name: Idrometria Brenta
+
+on:
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'   # ogni 10 minuti, ma non a :00/:10/..., orari in cui GitHub salta più spesso le esecuzioni
+  workflow_dispatch:
+    inputs:
+      prova:
+        description: 'Invia un messaggio Telegram di PROVA (nessuna allerta reale)'
+        type: boolean
+        default: false
+      prova_push:
+        description: 'Invia una notifica PUSH di PROVA ai dispositivi (nessuna allerta reale)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: idrometria
+  cancel-in-progress: false
+
+jobs:
+  idro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recupera lo stato precedente
+        run: |
+          mkdir -p out
+          git fetch --depth=1 origin data || true
+          git show origin/data:state.json > out/state.json 2>/dev/null || echo '{}' > out/state.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Strumento per leggere il bollettino PDF
+        run: command -v pdftotext >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils)
+
+      - name: Scarica dati ARPAV e invia gli avvisi
+        run: node scripts/idro.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OSSERVATORIO_USER: ${{ secrets.OSSERVATORIO_USER }}
+          OSSERVATORIO_PASSWORD: ${{ secrets.OSSERVATORIO_PASSWORD }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          COMUNE: ${{ vars.COMUNE }}
+          CFD_ZONA: ${{ vars.CFD_ZONA }}
+          TEST_MESSAGGIO: ${{ inputs.prova && '1' || '' }}
+          TEST_PUSH: ${{ inputs.prova_push && '1' || '' }}
+
+      - name: Pubblica i dati per l'app (ramo "data")
+        if: always() && hashFiles('out/idro.json') != ''
+        run: |
+          cd out
+          git init -q -b data
+          git config user.name "idrometria-bot"
+          git config user.email "idrometria-bot@users.noreply.github.com"
+          git add idro.json state.json
+          git commit -q -m "dati $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+
+      - name: Archivio storico ARPAV (ramo "archivio", al massimo una volta ogni 6 ore)
+        if: always() && hashFiles('out/idro.json') != ''
+        continue-on-error: true
+        run: |
+          set -e
+          URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          rm -rf archivio-wt
+          if git ls-remote --exit-code --heads "$URL" archivio >/dev/null 2>&1; then
+            git clone -q --depth 1 --branch archivio "$URL" archivio-wt
+            ULTIMO=$(git -C archivio-wt log -1 --format=%ct)
+          else
+            mkdir archivio-wt
+            git -C archivio-wt init -q -b archivio
+            git -C archivio-wt remote add origin "$URL"
+            ULTIMO=0
+          fi
+          if [ $(( $(date +%s) - ULTIMO )) -lt 19800 ]; then
+            echo "Archivio aggiornato meno di 5,5 ore fa: salto."
+            exit 0
+          fi
+          node scripts/archivio.mjs out/idro.json archivio-wt
+          cd archivio-wt
+          git config user.name "idrometria-bot"
+          git config user.email "idrometria-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "Nessuna novità da archiviare."; exit 0; fi
+          git commit -q -m "archivio $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q origin archivio

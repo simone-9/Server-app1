@@ -1,0 +1,28 @@
+name: Bacheca avvisi - notifiche push
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'   # ogni 5 minuti (GitHub puo' ritardare un po' le esecuzioni programmate)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bacheca-push
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Notifica i nuovi avvisi della bacheca
+        run: node scripts/bacheca-push.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
