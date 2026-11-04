@@ -13,10 +13,6 @@ on:
         description: 'Invia una notifica PUSH di PROVA ai dispositivi (nessuna allerta reale)'
         type: boolean
         default: false
-      gruppo:
-        description: 'Solo questo gruppo (codice); vuoto = tutti i gruppi attivi'
-        type: string
-        required: false
 
 permissions:
   contents: write
@@ -28,14 +24,15 @@ concurrency:
 jobs:
   idro:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Recupera dati e stato precedenti (ramo data, una cartella per gruppo)
+      - name: Recupera lo stato precedente
         run: |
           mkdir -p out
-          if git fetch --depth=1 origin data 2>/dev/null; then git archive origin/data | tar -x -C out; fi
+          git fetch --depth=1 origin data || true
+          git show origin/data:state.json > out/state.json 2>/dev/null || echo '{}' > out/state.json
 
       - uses: actions/setup-node@v4
         with:
@@ -44,39 +41,33 @@ jobs:
       - name: Strumento per leggere il bollettino PDF
         run: command -v pdftotext >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils)
 
-      - name: Scarica i dati ARPAV una volta sola (valgono per tutti i gruppi)
-        run: |
-          F="$RUNNER_TEMP/arpav.xml"
-          curl -sS -L --fail --connect-timeout 40 --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors -A 'idrometria-protezione-civile' 'https://www.arpa.veneto.it/api/risorse/data-meteo/xml/Ultime48ore.xml' -o "$F" || true
-          if grep -q '<SENSORE>' "$F" 2>/dev/null; then echo "IDRO_SOURCE_FILE=$F" >> "$GITHUB_ENV"; else echo "::warning::ARPAV non scaricabile da qui: ogni gruppo riprova per conto suo."; fi
-
-      - name: Avvisi e dati per ogni gruppo
-        run: node scripts/per-gruppi.mjs node scripts/idro.mjs
+      - name: Scarica dati ARPAV e invia gli avvisi
+        run: node scripts/idro.mjs
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           OSSERVATORIO_USER: ${{ secrets.OSSERVATORIO_USER }}
           OSSERVATORIO_PASSWORD: ${{ secrets.OSSERVATORIO_PASSWORD }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GRUPPO_ID: ${{ inputs.gruppo || vars.GRUPPO_ID }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
           COMUNE: ${{ vars.COMUNE }}
           CFD_ZONA: ${{ vars.CFD_ZONA }}
           TEST_MESSAGGIO: ${{ inputs.prova && '1' || '' }}
           TEST_PUSH: ${{ inputs.prova_push && '1' || '' }}
 
       - name: Pubblica i dati per l'app (ramo "data")
-        if: always() && hashFiles('out/**/idro.json') != ''
+        if: always() && hashFiles('out/idro.json') != ''
         run: |
           cd out
           git init -q -b data
           git config user.name "idrometria-bot"
           git config user.email "idrometria-bot@users.noreply.github.com"
-          git add -A
+          git add idro.json state.json
           git commit -q -m "dati $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
 
       - name: Archivio storico ARPAV (ramo "archivio", al massimo una volta ogni 6 ore)
-        if: always() && hashFiles('out/**/idro.json') != ''
+        if: always() && hashFiles('out/idro.json') != ''
         continue-on-error: true
         run: |
           set -e
@@ -95,7 +86,7 @@ jobs:
             echo "Archivio aggiornato meno di 5,5 ore fa: salto."
             exit 0
           fi
-          for f in out/*/idro.json; do node scripts/archivio.mjs "$f" archivio-wt; done   # le stazioni sono uguali per tutti i gruppi: i dati si uniscono
+          node scripts/archivio.mjs out/idro.json archivio-wt
           cd archivio-wt
           git config user.name "idrometria-bot"
           git config user.email "idrometria-bot@users.noreply.github.com"

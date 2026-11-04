@@ -15,10 +15,6 @@ on:
         description: 'ID della richiesta (vuoto per «prova»)'
         type: string
         required: false
-      gruppo:
-        description: 'Codice del gruppo che ha fatto la richiesta (lo indica l''app)'
-        type: string
-        required: false
 
 permissions:
   contents: read
@@ -42,7 +38,7 @@ jobs:
         run: npm install --no-save --no-audit --no-fund nodemailer@6
 
       - name: Esegui
-        run: node scripts/per-gruppi.mjs node scripts/ente-mail.mjs
+        run: node scripts/ente-mail.mjs
         env:
           AZIONE: ${{ inputs.azione }}
           ID_RICHIESTA: ${{ inputs.id }}
@@ -52,6 +48,6 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           GROQ_MODEL: ${{ vars.GROQ_MODEL }}
           NOME_MITTENTE: ${{ vars.NOME_MITTENTE }}
-          GRUPPO_ID: ${{ inputs.gruppo || vars.GRUPPO_ID }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
           NOME_GRUPPO: ${{ vars.NOME_GRUPPO }}
           MAX_INVII_24H: ${{ vars.MAX_INVII_24H }}
