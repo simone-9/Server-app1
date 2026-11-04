@@ -15,7 +15,7 @@ export function chiaveServizio(env = process.env) {
   throw new Error('FIREBASE_SERVICE_ACCOUNT non è un JSON valido di account di servizio');
 }
 
-async function accessToken(k, f) {
+export async function accessToken(k, f) {
   const ora = Math.floor(Date.now() / 1000);
   const corpo = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' })) + '.' + b64u(JSON.stringify({ iss: k.client_email, scope: 'https://www.googleapis.com/auth/cloud-platform', aud: 'https://oauth2.googleapis.com/token', iat: ora, exp: ora + 3000 }));
   const firma = b64u(createSign('RSA-SHA256').update(corpo).sign(k.private_key));

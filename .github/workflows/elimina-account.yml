@@ -1,0 +1,34 @@
+name: Elimina account di un gruppo
+
+# Avviato dall'app quando un super admin elimina un gruppo (oppure a mano).
+# Cancella da Firebase Authentication gli account del gruppo (indirizzi «...@<gruppo>.pc-gruppi.it»); gli account con un indirizzo email vero non si toccano.
+on:
+  workflow_dispatch:
+    inputs:
+      gruppo:
+        description: 'Codice del gruppo eliminato'
+        type: string
+        required: true
+      conferma:
+        description: 'Scrivi si per confermare'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  elimina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Elimina gli account
+        run: node scripts/elimina-account.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GRUPPO_ID: ${{ inputs.gruppo }}
+          CONFERMA: ${{ inputs.conferma }}
