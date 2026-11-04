@@ -58,13 +58,13 @@ jobs:
       - name: Pubblica i dati per l'app (ramo "data")
         if: always() && hashFiles('out/idro.json') != ''
         run: |
-          cp config/osservatorio-stazioni.json out/ 2>/dev/null || true   # elenco delle stazioni per le impostazioni dell'app (stesso indirizzo di idro.json)
+          cp config/osservatorio-stazioni.json config/arpav-stazioni.json out/ 2>/dev/null || true   # elenchi delle stazioni per le impostazioni dell'app (stesso indirizzo di idro.json)
           cd out
           git init -q -b data
           git config user.name "idrometria-bot"
           git config user.email "idrometria-bot@users.noreply.github.com"
           git add idro.json state.json
-          if [ -f osservatorio-stazioni.json ]; then git add osservatorio-stazioni.json; fi
+          for f in osservatorio-stazioni.json arpav-stazioni.json; do if [ -f $f ]; then git add $f; fi; done
           git commit -q -m "dati $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
 

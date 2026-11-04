@@ -1,0 +1,35 @@
+name: Elenco stazioni ARPAV (per la scelta nelle impostazioni)
+
+# Prepara l'elenco delle stazioni ARPAV Veneto (livelli dei fiumi e pluviometri) con la provincia,
+# che l'app mostra in Impostazioni gruppo. Avvio manuale, e una volta al mese. Scrive config/arpav-stazioni.json.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 4 1 * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arpav-catalogo
+  cancel-in-progress: false
+
+jobs:
+  catalogo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Crea l'elenco delle stazioni
+        run: node scripts/arpav-catalogo.mjs
+      - name: Salva l'elenco nel repository
+        run: |
+          git config user.name "idrometria-bot"
+          git config user.email "idrometria-bot@users.noreply.github.com"
+          git add config/arpav-stazioni.json
+          if git diff --cached --quiet; then echo "Elenco invariato."; exit 0; fi
+          git commit -q -m "elenco stazioni ARPAV $(date -u +%Y-%m-%d)"
+          git push -q
