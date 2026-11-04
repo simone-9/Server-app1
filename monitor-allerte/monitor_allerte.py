@@ -26,6 +26,7 @@ COMUNE = (os.environ.get("COMUNE") or "Curtarolo").strip()
 NOME_ZONA = (os.environ.get("CFD_NOME_ZONA") or "Pianura centrale")
 TELEGRAM_CONSENTITO = True   # il gruppo può spegnere Telegram dall'app (impostazioni del gruppo)
 CFD_ATTIVO = True            # idem per le allerte CFD
+CHAT_GRUPPO = ""             # ID della chat Telegram scritto nelle impostazioni del gruppo (precedenza sul segreto)
 SOGLIA_TELEGRAM = os.environ.get("SOGLIA_TELEGRAM", "ARANCIONE").strip().upper()
 USER_AGENT = "ProtezioneCivile-Monitor/1.0 (monitoraggio allerte, protezione civile comunale)"
 MAX_DOCUMENTI = 6
@@ -207,7 +208,7 @@ def invia_avviso(testo):
 
 def applica_config_gruppo(c):
     """Impostazioni del gruppo scritte dall'app (comune, zona CFD, Telegram sì/no). Hanno la precedenza sulle variabili del repository."""
-    global ZONA, COMUNE, NOME_ZONA, TELEGRAM_CONSENTITO, CFD_ATTIVO
+    global ZONA, COMUNE, NOME_ZONA, TELEGRAM_CONSENTITO, CFD_ATTIVO, CHAT_GRUPPO
     if not isinstance(c, dict):
         return
     if c.get("comune"):
@@ -219,8 +220,11 @@ def applica_config_gruppo(c):
             NOME_ZONA = str(cfd["zonaNome"]).strip()
     if cfd.get("attivo") is False:
         CFD_ATTIVO = False
-    if (c.get("telegram") or {}).get("attivo") is False:
+    tg = c.get("telegram") or {}
+    if tg.get("attivo") is False:
         TELEGRAM_CONSENTITO = False
+    elif tg.get("chatId"):
+        CHAT_GRUPPO = str(tg["chatId"]).strip()
     print(f"Impostazioni del gruppo lette: {COMUNE}, zona CFD {ZONA if CFD_ATTIVO else 'non usata'}, Telegram {'consentito' if TELEGRAM_CONSENTITO else 'spento'}")
 
 
@@ -229,7 +233,7 @@ def invia_telegram(testo):
     if not TELEGRAM_CONSENTITO:
         print("Telegram disattivato nelle impostazioni del gruppo: messaggio non inviato")
         return False
-    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), (CHAT_GRUPPO or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
     if not token or not chat:
         print("Telegram non configurato: messaggio non inviato")
         return False

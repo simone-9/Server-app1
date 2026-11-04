@@ -28,6 +28,8 @@ const FIUME_ON = !(GRP_FIUME && GRP_FIUME.attivo === false);
 if (GRP) console.log(`Impostazioni del gruppo lette: ${COMUNE}, zona CFD ${CFD_ON ? CFD_ZONA : 'non usata'}, fiume ${FIUME_ON ? ((GRP_FIUME && GRP_FIUME.nome) || 'da file') : 'non usato'}, Telegram ${GRP.telegram && GRP.telegram.attivo === false ? 'spento' : 'consentito'}`);
 // Telegram: se il gruppo lo ha disattivato nell'app non si invia nulla, anche se i segreti ci sono
 if (GRP && GRP.telegram && GRP.telegram.attivo === false) { TOKEN = ''; CHAT = ''; DRY = false; }
+// ID della chat scritto dal gruppo nelle impostazioni dell'app: ha la precedenza sul segreto TELEGRAM_CHAT_ID (il token resta sempre nei segreti)
+else if (GRP && GRP.telegram && GRP.telegram.chatId) CHAT = String(GRP.telegram.chatId);
 // fiume: stazioni del gruppo al posto di quelle del file (solo se non sono già nel file)
 if (!FIUME_ON) cfg.stazioni = [];
 else if (GRP_FIUME && GRP_FIUME.rif && !cfg.stazioni.some(x => x.id === GRP_FIUME.rif)) {
