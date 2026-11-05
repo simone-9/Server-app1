@@ -11,7 +11,7 @@
 //   DELETE /media/<chiave>            solo Admin, Operatore SOC o chi l'ha caricato
 //   GET    /uso                       solo Admin: spazio occupato nel bucket
 
-const ORIGINI_DEFAULT = ['https://pccurtarolo.gestionemergenzecurtarolo.workers.dev'];
+const ORIGINI_DEFAULT = ['https://pccurtarolo.gestionemergenzecurtarolo.workers.dev', 'https://gestione-cantieri-temporanei.web.app', 'https://gestione-cantieri-temporanei.firebaseapp.com'];
 const ADMIN_DEFAULT = ['simokikko@gmail.com', 'servicesimoapp@protonmail.com'];
 const TIPI = {
   'image/jpeg': { ext: 'jpg', max: 3 * 1024 * 1024 },
