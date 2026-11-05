@@ -1,0 +1,10 @@
+{
+  "name": "pc-media",
+  "main": "worker.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "pc-curtarolo-media", "jurisdiction": "eu" }
+  ],
+  "vars": { "FIREBASE_PROJECT_ID": "gestione-cantieri-temporanei" }
+}
