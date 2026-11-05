@@ -128,3 +128,6 @@ La push parte anche quando sale il livello dell'**allerta CFD** (zona E1) per og
 ## Registro automatico delle piene
 
 A ogni esecuzione il servizio controlla Barzizza e Limena: una piena si apre quando una delle due supera G1 e si chiude dopo 6 ore sotto G1. Per ogni piena scrive in Firestore (raccolta `idro_eventi`) il picco e l'orario di ogni passaggio di soglia; a piena conclusa, se i due picchi sono ben distinti, calcola anche il tempo di viaggio da Barzizza a Limena e il coefficiente. L'app li mostra nella scheda Idrometria, li inserisce nel verbale e propone agli amministratori di usarli per attivare la stima. Serve il segreto `FIREBASE_SERVICE_ACCOUNT` e la regola `idro_eventi` in `firestore.rules` pubblicata.
+
+## Licenza
+Tutti i diritti riservati, © 2026 Simone Sabbadin: vedi il file `LICENSE`. L'uso è consentito ai gruppi di protezione civile e agli enti a cui l'autore ha dato accesso; copia, modifica e ridistribuzione richiedono il suo permesso scritto.
