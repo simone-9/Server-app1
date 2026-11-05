@@ -4,7 +4,8 @@
 // Richiede il segreto FIREBASE_SERVICE_ACCOUNT. Senza, non fa nulla.
 import { inviaPush, chiaveServizio, leggiCollezione, scriviDocumento } from './push.mjs';
 
-const MAX_ETA_MS = 24 * 3600 * 1000;   // gli avvisi più vecchi di un giorno non si notificano (sicurezza dopo un fermo prolungato)
+const MAX_ETA_MS = 24 * 3600 * 1000;
+const MAX_ETA_SVEGLIA_MS = 30 * 60 * 1000;   // una chiamata di attivazione vecchia di più di mezz'ora non fa più suonare la sveglia (arriva come notifica normale)   // gli avvisi più vecchi di un giorno non si notificano (sicurezza dopo un fermo prolungato)
 const compatta = t => String(t || '').replace(/\s+/g, ' ').trim();
 const breve = (t, n) => { const x = compatta(t); return x.length > n ? x.slice(0, n - 1).trim() + '…' : x; };
 const oggiIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());   // AAAA-MM-GG
@@ -31,9 +32,10 @@ export async function main(opz = {}) {
   const { invia, notificati, primo } = daNotificare(avvisi, stato, opz.ora, opz.oggi);
   let inviate = 0, errori = 0;
   for (const a of invia) {
-    const c = a.campi, urgente = c.urgente === true;
+    const c = a.campi, urgente = c.urgente === true, chiamata = c.chiamata === true, tc = Date.parse(c.creato || '');
+    const allarme = chiamata && (isNaN(tc) || (opz.ora || Date.now()) - tc <= MAX_ETA_SVEGLIA_MS);
     try {
-      const e = await inviaPush({ titolo: (urgente ? 'URGENTE · ' : 'Nuovo avviso · ') + breve(c.titolo, 80), testo: breve(c.testo, 140), tag: 'bacheca-' + a.id, icona: urgente ? '🚨' : '📌' }, Object.assign({}, opz, { escludiEmail: [c.creatoEmail] }));
+      const e = await inviaPush({ titolo: (chiamata ? 'CHIAMATA DI ATTIVAZIONE · ' : urgente ? 'URGENTE · ' : 'Nuovo avviso · ') + breve(c.titolo, 80), testo: breve(c.testo, 140), tag: 'bacheca-' + a.id, icona: chiamata || urgente ? '🚨' : '📌', allarme, avvisoId: a.id }, Object.assign({}, opz, { escludiEmail: [c.creatoEmail] }));
       console.log(`Push avviso «${breve(c.titolo, 40)}»: ${e.inviati}/${e.dispositivi} dispositivi, ${e.rimossi} rimossi`);
       inviate++;
     } catch (e) {

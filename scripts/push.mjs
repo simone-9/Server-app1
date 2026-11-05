@@ -33,10 +33,11 @@ function prefDaFs(v) {
   return o;
 }
 // Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi)
-export function pushAmmesso(pref, tag) {
+export function pushAmmesso(pref, tag, allarme = false) {
   const t = String(tag || '');
   if (!pref || t === 'idro-prova') return true;
   if (pref.tutte === false) return false;
+  if (allarme) return true;   // chiamata di attivazione: arriva anche a chi ha spento le notifiche della bacheca
   if (/^cfd-/.test(t)) return pref.cfd !== false;
   if (/^bacheca-/.test(t)) return pref.bacheca !== false;
   if (/^idro-prev-/.test(t)) return pref.prev !== false;
@@ -45,13 +46,16 @@ export function pushAmmesso(pref, tag) {
   return true;
 }
 
+// La sveglia a schermo intero parte solo sull'app Android (dispositivo «nativo») e solo se l'utente non l'ha spenta nelle impostazioni; altrove è una notifica normale.
+export function comeAllarme(msg, d) { return !!msg.allarme && !!d.nativo && !(d.pref && d.pref.sveglia === false); }
+
 async function elencoDispositivi(k, tok, f) {
   const out = []; let pag = '';
   do {
     const r = await f(`https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents/${PREFISSO}push_dispositivi?pageSize=300${pag}`, { headers: { authorization: 'Bearer ' + tok } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error('Lettura dei dispositivi non riuscita (' + r.status + '): ' + JSON.stringify(j).slice(0, 200));
-    (j.documents || []).forEach(d => { const t = d.fields && d.fields.token && d.fields.token.stringValue, em = d.fields && d.fields.email && d.fields.email.stringValue; if (t) out.push({ nome: d.name, token: t, email: String(em || '').toLowerCase(), pref: prefDaFs(d.fields && d.fields.pref) }); });
+    (j.documents || []).forEach(d => { const t = d.fields && d.fields.token && d.fields.token.stringValue, em = d.fields && d.fields.email && d.fields.email.stringValue; if (t) out.push({ nome: d.name, token: t, email: String(em || '').toLowerCase(), pref: prefDaFs(d.fields && d.fields.pref), nativo: !!(d.fields && d.fields.nativo && d.fields.nativo.booleanValue) }); });
     pag = j.nextPageToken ? '&pageToken=' + encodeURIComponent(j.nextPageToken) : '';
   } while (pag);
   return out;
@@ -62,12 +66,12 @@ export async function inviaPush(msg, opzioni = {}) {
   const f = opzioni.fetch || fetch, k = chiaveServizio(opzioni.env || process.env);
   if (!k) return { saltato: true };
   const escl = new Set((opzioni.escludiEmail || []).map(x => String(x || '').toLowerCase()).filter(Boolean));
-  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && pushAmmesso(d.pref, msg.tag));
+  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && pushAmmesso(d.pref, msg.tag, !!msg.allarme));
   let inviati = 0, rimossi = 0;
   for (const d of dispositivi) {
     const r = await f(`https://fcm.googleapis.com/v1/projects/${k.project_id}/messages:send`, {
       method: 'POST', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' },
-      body: JSON.stringify({ message: { token: d.token, data: { titolo: String(msg.titolo), testo: String(msg.testo), tag: String(msg.tag || 'idro'), icona: String(msg.icona || ''), url: './' }, webpush: { headers: { Urgency: 'high', TTL: '3600' } }, android: { priority: 'HIGH' } } })
+      body: JSON.stringify({ message: { token: d.token, data: Object.assign({ titolo: String(msg.titolo), testo: String(msg.testo), tag: String(msg.tag || 'idro'), icona: String(msg.icona || ''), url: './' }, comeAllarme(msg, d) ? { tipo: 'allarme', avvisoId: String(msg.avvisoId || '') } : {}), webpush: { headers: { Urgency: 'high', TTL: '3600' } }, android: { priority: 'HIGH', ttl: comeAllarme(msg, d) ? '600s' : '3600s' } } })
     });
     if (r.ok) { inviati++; continue; }
     const t = await r.text().catch(() => '');
