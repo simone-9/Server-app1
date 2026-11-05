@@ -25,13 +25,33 @@ export async function accessToken(k, f) {
   return j.access_token;
 }
 
+// Preferenze di notifica scelte dall'utente sul proprio dispositivo (mappa «pref» del documento): { tutte, idro, minG, prev, cfd, bacheca }.
+// Dispositivi senza preferenze (registrati prima di questa funzione): ricevono tutto.
+function prefDaFs(v) {
+  const m = v && v.mapValue && v.mapValue.fields; if (!m) return null;
+  const o = {}; for (const [k, x] of Object.entries(m)) { if ('booleanValue' in x) o[k] = x.booleanValue; else if ('integerValue' in x) o[k] = Number(x.integerValue); else if ('doubleValue' in x) o[k] = x.doubleValue; }
+  return o;
+}
+// Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi)
+export function pushAmmesso(pref, tag) {
+  const t = String(tag || '');
+  if (!pref || t === 'idro-prova') return true;
+  if (pref.tutte === false) return false;
+  if (/^cfd-/.test(t)) return pref.cfd !== false;
+  if (/^bacheca-/.test(t)) return pref.bacheca !== false;
+  if (/^idro-prev-/.test(t)) return pref.prev !== false;
+  const m = /^idro-.+-(\d+)$/.exec(t);
+  if (m) return pref.idro !== false && Number(m[1]) >= (pref.minG || 1);
+  return true;
+}
+
 async function elencoDispositivi(k, tok, f) {
   const out = []; let pag = '';
   do {
     const r = await f(`https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents/${PREFISSO}push_dispositivi?pageSize=300${pag}`, { headers: { authorization: 'Bearer ' + tok } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error('Lettura dei dispositivi non riuscita (' + r.status + '): ' + JSON.stringify(j).slice(0, 200));
-    (j.documents || []).forEach(d => { const t = d.fields && d.fields.token && d.fields.token.stringValue, em = d.fields && d.fields.email && d.fields.email.stringValue; if (t) out.push({ nome: d.name, token: t, email: String(em || '').toLowerCase() }); });
+    (j.documents || []).forEach(d => { const t = d.fields && d.fields.token && d.fields.token.stringValue, em = d.fields && d.fields.email && d.fields.email.stringValue; if (t) out.push({ nome: d.name, token: t, email: String(em || '').toLowerCase(), pref: prefDaFs(d.fields && d.fields.pref) }); });
     pag = j.nextPageToken ? '&pageToken=' + encodeURIComponent(j.nextPageToken) : '';
   } while (pag);
   return out;
@@ -42,7 +62,7 @@ export async function inviaPush(msg, opzioni = {}) {
   const f = opzioni.fetch || fetch, k = chiaveServizio(opzioni.env || process.env);
   if (!k) return { saltato: true };
   const escl = new Set((opzioni.escludiEmail || []).map(x => String(x || '').toLowerCase()).filter(Boolean));
-  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)));
+  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && pushAmmesso(d.pref, msg.tag));
   let inviati = 0, rimossi = 0;
   for (const d of dispositivi) {
     const r = await f(`https://fcm.googleapis.com/v1/projects/${k.project_id}/messages:send`, {
