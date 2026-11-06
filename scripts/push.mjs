@@ -32,7 +32,7 @@ function prefDaFs(v) {
   const o = {}; for (const [k, x] of Object.entries(m)) { if ('booleanValue' in x) o[k] = x.booleanValue; else if ('integerValue' in x) o[k] = Number(x.integerValue); else if ('doubleValue' in x) o[k] = x.doubleValue; }
   return o;
 }
-// Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi), richiesta-… (richieste di intervento)
+// Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi), calendario-… (eventi e promemoria), richiesta-… (richieste di intervento)
 export function pushAmmesso(pref, tag, allarme = false) {
   const t = String(tag || '');
   if (!pref || t === 'idro-prova') return true;
@@ -41,6 +41,7 @@ export function pushAmmesso(pref, tag, allarme = false) {
   if (/^cfd-/.test(t)) return pref.cfd !== false;
   if (/^bacheca-/.test(t)) return pref.bacheca !== false;
   if (/^richiesta-/.test(t)) return pref.richieste !== false;
+  if (/^calendario-/.test(t)) return pref.calendario !== false;
   if (/^idro-prev-/.test(t)) return pref.prev !== false;
   const m = /^idro-.+-(\d+)$/.exec(t);
   if (m) return pref.idro !== false && Number(m[1]) >= (pref.minG || 1);

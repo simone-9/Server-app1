@@ -1,0 +1,28 @@
+name: Calendario - notifiche push
+
+on:
+  schedule:
+    - cron: '7-59/15 * * * *'   # ogni 15 minuti (GitHub puo' ritardare un po' le esecuzioni programmate)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendario-push
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Notifica nuovi eventi e promemoria a chi non ha risposto
+        run: node scripts/calendario-push.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
