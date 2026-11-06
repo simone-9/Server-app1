@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendario Protezione Civile Curtarolo</title>
+<style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem;color:#1e293b;line-height:1.5}a.b{display:inline-block;background:#047857;color:#fff;padding:.6rem 1rem;border-radius:.4rem;text-decoration:none;font-weight:700;margin:.3rem 0}code{background:#f1f5f9;padding:.1rem .3rem;border-radius:.2rem}</style></head>
+<body>
+<h1>Calendario attività</h1>
+<p>Gruppo comunale di Protezione Civile di Curtarolo: esercitazioni, manifestazioni e prevenzioni.</p>
+<p><a class="b" id="abb" href="#">Abbonati al calendario</a></p>
+<p>Il calendario si aggiorna da solo. Se il pulsante non si apre, in Apple Calendario, Outlook o in un altro programma scegli «Aggiungi calendario da URL» e incolla:</p>
+<p><code id="url"></code></p>
+<script>
+var u = location.href.replace(/[^\/]*$/, '') + 'calendario.ics';
+document.getElementById('url').textContent = u;
+document.getElementById('abb').href = u.replace(/^https?:/, 'webcal:');
+</script>
+</body></html>
