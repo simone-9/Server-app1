@@ -32,7 +32,7 @@ function prefDaFs(v) {
   const o = {}; for (const [k, x] of Object.entries(m)) { if ('booleanValue' in x) o[k] = x.booleanValue; else if ('integerValue' in x) o[k] = Number(x.integerValue); else if ('doubleValue' in x) o[k] = x.doubleValue; }
   return o;
 }
-// Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi)
+// Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi), richiesta-… (richieste di intervento)
 export function pushAmmesso(pref, tag, allarme = false) {
   const t = String(tag || '');
   if (!pref || t === 'idro-prova') return true;
@@ -40,6 +40,7 @@ export function pushAmmesso(pref, tag, allarme = false) {
   if (allarme) return true;   // chiamata di attivazione: arriva anche a chi ha spento le notifiche della bacheca
   if (/^cfd-/.test(t)) return pref.cfd !== false;
   if (/^bacheca-/.test(t)) return pref.bacheca !== false;
+  if (/^richiesta-/.test(t)) return pref.richieste !== false;
   if (/^idro-prev-/.test(t)) return pref.prev !== false;
   const m = /^idro-.+-(\d+)$/.exec(t);
   if (m) return pref.idro !== false && Number(m[1]) >= (pref.minG || 1);
@@ -61,12 +62,13 @@ async function elencoDispositivi(k, tok, f) {
   return out;
 }
 
-// msg = { titolo, testo, tag }. opzioni.escludiEmail = email degli utenti a cui NON mandare la notifica (es. chi ha pubblicato l'avviso). Ritorna { saltato } oppure { dispositivi, inviati, rimossi }
+// msg = { titolo, testo, tag }. opzioni.escludiEmail = email degli utenti a cui NON mandare la notifica (es. chi ha pubblicato l'avviso); opzioni.soloEmail = se presente, la notifica va solo a questi utenti. Ritorna { saltato } oppure { dispositivi, inviati, rimossi }
 export async function inviaPush(msg, opzioni = {}) {
   const f = opzioni.fetch || fetch, k = chiaveServizio(opzioni.env || process.env);
   if (!k) return { saltato: true };
   const escl = new Set((opzioni.escludiEmail || []).map(x => String(x || '').toLowerCase()).filter(Boolean));
-  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && pushAmmesso(d.pref, msg.tag, !!msg.allarme));
+  const solo = Array.isArray(opzioni.soloEmail) ? new Set(opzioni.soloEmail.map(x => String(x || '').toLowerCase()).filter(Boolean)) : null;
+  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && (!solo || (d.email && solo.has(d.email))) && pushAmmesso(d.pref, msg.tag, !!msg.allarme));
   let inviati = 0, rimossi = 0;
   for (const d of dispositivi) {
     const r = await f(`https://fcm.googleapis.com/v1/projects/${k.project_id}/messages:send`, {
@@ -108,6 +110,20 @@ export async function leggiCollezione(coll, opzioni = {}) {
     pag = j.nextPageToken ? '&pageToken=' + encodeURIComponent(j.nextPageToken) : '';
   } while (pag);
   return out;
+}
+
+// Legge solo i documenti di una raccolta il cui campo testuale (data ISO) e' >= daIso: una interrogazione, cosi' non si leggono ogni volta tutte le richieste storiche.
+// Ritorna [{ id, campi }] (stesso formato di leggiCollezione). Il campo deve avere l'indice automatico di Firestore (campo singolo).
+export async function interrogaDa(coll, campo, daIso, opzioni = {}) {
+  const f = opzioni.fetch || fetch, k = chiaveServizio(opzioni.env || process.env);
+  if (!k) return null;
+  const tok = await accessToken(k, f), padre = PREFISSO ? PREFISSO.replace(/\/$/, '') : '';
+  const r = await f(`https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents${padre ? '/' + padre : ''}:runQuery`, {
+    method: 'POST', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: coll }], where: { fieldFilter: { field: { fieldPath: campo }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: daIso } } }, limit: 500 } }) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !Array.isArray(j)) throw new Error(`Interrogazione di ${coll} non riuscita (${r.status}): ` + JSON.stringify(j).slice(0, 200));
+  return j.filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), campi: daFs({ mapValue: { fields: x.document.fields || {} } }) }));
 }
 
 // Scrive (sostituisce) un documento di Firestore con l'account di servizio. I valori sono convertiti dal formato JavaScript.
