@@ -1,0 +1,80 @@
+name: Calendario (file .ics e Google Calendar)
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"     # ogni 15 minuti (minuti sfalsati: GitHub salta piu' spesso le esecuzioni a :00)
+  workflow_dispatch:
+    inputs:
+      prova:
+        description: "Google Calendar: solo prova (mostra cosa farebbe senza modificare nulla)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write                    # serve a pubblicare il file .ics sul branch gh-pages
+
+concurrency:
+  group: calendario
+  cancel-in-progress: false
+
+jobs:
+  calendario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: calendario/requirements_calendario.txt
+      - run: pip install -r calendario/requirements_calendario.txt
+
+      - name: Crea il file calendario.ics dagli eventi dell'app
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python calendario/sync_calendario_google.py --ics out/calendario.ics
+
+      - name: Pubblica il file .ics su GitHub Pages (branch gh-pages, solo se cambia)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          REMOTO="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$REMOTO" gh-pages >/dev/null 2>&1; then
+            git clone --depth 1 --branch gh-pages "$REMOTO" pub
+          else
+            mkdir pub && cd pub && git init -q -b gh-pages && git remote add origin "$REMOTO" && cd ..
+          fi
+          cp out/calendario.ics pub/calendario.ics
+          cp calendario/pagina/index.html pub/index.html
+          touch pub/.nojekyll
+          cd pub
+          git config user.name "calendario-bot"
+          git config user.email "calendario-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nessuna modifica al calendario."
+          else
+            git commit -q -m "Calendario aggiornato"
+            git push -q origin gh-pages
+            echo "Calendario pubblicato."
+          fi
+
+      # Il promemoria push ora lo manda il flusso «Calendario - notifiche push» (calendario-push.yml: 3 e 1 giorno prima, solo a chi non ha risposto, con le preferenze dell'utente).
+      # Questo passaggio resta spento: per riattivarlo imposta la variabile PROMEMORIA_PUSH = true (si avrebbero promemoria doppi).
+      - name: Promemoria push il giorno prima (dalle 18:00) - vecchio sistema
+        if: ${{ always() && vars.PROMEMORIA_PUSH == 'true' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROMEMORIA_ORA: ${{ vars.PROMEMORIA_ORA }}
+        run: python calendario/promemoria_push.py
+
+      - name: Riporta gli eventi in Google Calendar
+        if: ${{ always() }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GOOGLE_CALENDAR_ID: ${{ vars.GOOGLE_CALENDAR_ID }}
+        run: |
+          if [ -z "$GOOGLE_CALENDAR_ID" ]; then echo "GOOGLE_CALENDAR_ID non impostato: sincronizzazione Google saltata."; exit 0; fi
+          python calendario/sync_calendario_google.py ${{ inputs.prova && '--prova' || '' }}

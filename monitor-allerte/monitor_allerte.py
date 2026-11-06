@@ -58,7 +58,19 @@ def data_it(g, mese_nome, anno):
     mese = MESI.get(mese_nome.lower())
     if not mese:
         raise ErroreLettura(f"mese non riconosciuto: {mese_nome}")
-    return f"{int(g):02d}/{mese:02d}/{int(anno)}"       # gg/mm/aaaa, come toLocaleDateString('it-IT') nei browser attuali
+    return f"{int(g)}/{mese}/{int(anno)}"       # stesso formato di toLocaleDateString('it-IT') nell'app
+
+
+GIORNI_SETTIMANA = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+
+
+def data_con_giorno(data):
+    """'5/11/2026' -> 'giovedì 5/11/2026' (solo per i messaggi: nello storico la data resta com'è)."""
+    try:
+        g, m, a = (int(x) for x in str(data).split("/"))
+        return f"{GIORNI_SETTIMANA[datetime(a, m, g).weekday()]} {data}"
+    except Exception:
+        return str(data)
 
 
 def giorno_da_tabella(tabella):
@@ -138,11 +150,29 @@ def trova_documenti(html):
     return docs[:MAX_DOCUMENTI]
 
 
-def http_get(url):
-    import requests
-    r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
-    r.raise_for_status()
-    return r
+class SitoNonRaggiungibile(Exception):
+    """Il sito della Regione non risponde o segnala un guasto suo (503...): problema temporaneo, non dello script."""
+
+
+def http_get(url, tentativi=4):
+    """Scarica una pagina. Riprova con pause crescenti se il sito non risponde (connessione rifiutata, timeout, errore 5xx):
+    se non risponde mai solleva SitoNonRaggiungibile. Gli altri errori (es. 404) sono errori veri e passano subito."""
+    import requests, time
+    pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "5,15,30").split(",")]
+    ultimo = ""
+    for i in range(tentativi):
+        try:
+            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+            if r.status_code < 500 and r.status_code not in (408, 429):
+                r.raise_for_status()
+                return r
+            ultimo = f"risposta {r.status_code} dal sito"
+        except (requests.ConnectionError, requests.Timeout) as e:
+            ultimo = f"{type(e).__name__}: {str(e)[:120]}"
+        if i < tentativi - 1:
+            print(f"Sito non raggiungibile ({ultimo}), riprovo tra {pause[min(i, len(pause) - 1)]:.0f} s")
+            time.sleep(pause[min(i, len(pause) - 1)])
+    raise SitoNonRaggiungibile(f"{ultimo} dopo {tentativi} tentativi")
 
 
 # ------------------------------------------------------------------ Telegram
@@ -150,9 +180,9 @@ def messaggio_telegram(g, doc, url, prec_liv):
     icone = {"ARANCIONE": "\U0001F7E0", "ROSSA": "\U0001F534"}
     liv = g["livello"]
     if RANGO[liv] < RANGO[SOGLIA_TELEGRAM]:
-        testa = f"✅ Allerta rientrata (era {prec_liv}): ora {liv} per {g['giorno']} ({g['data']})"
+        testa = f"✅ Allerta rientrata (era {prec_liv}): ora {liv} per {g['giorno']} ({data_con_giorno(g['data'])})"
     else:
-        testa = f"{icone.get(liv, '')} ALLERTA {liv} - {g['giorno']} ({g['data']})"
+        testa = f"{icone.get(liv, '')} ALLERTA {liv} - {g['giorno']} ({data_con_giorno(g['data'])})"
     righe = [testa, f"Zona {ZONA} - {NOME_ZONA} ({COMUNE})", ""]
     attivi = [v for v in g["rischi"].values() if v["livello"] and v["livello"] != "VERDE"]
     if attivi:
@@ -370,7 +400,17 @@ def esegui(archivio, invia=None):
                 continue
             elabora(archivio, d["url"], d["testo"], http_get(d["url"]).content, invia)
             nuovi += 1
-        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti", "erroriConsecutivi": 0})
+        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti", "erroriConsecutivi": 0, "nonRaggiungibile": False})
+        return 0
+    except SitoNonRaggiungibile as e:
+        # il sito della Regione e' fuori uso: non e' un errore dello script. Si tiene l'ultimo bollettino, si segnala "non aggiornato"
+        # nell'app e il lavoro su GitHub resta verde. Avviso su Telegram solo se dura da circa un'ora (6 controlli).
+        n = int((archivio.leggi("cfd_stato/monitor") or {}).get("erroriConsecutivi", 0)) + 1
+        msg = "Sito della Regione non raggiungibile: bollettino non aggiornato (" + str(e)[:150] + ")"
+        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "errore", "messaggio": msg[:300], "erroriConsecutivi": n, "nonRaggiungibile": True})
+        print("ATTENZIONE:", msg)
+        if n == 6:
+            invia(f"⚠️ Monitoraggio allerte: il sito della Regione non risponde da circa un'ora, i bollettini non sono aggiornati.\nVerifica a mano: {CFD_URL}")
         return 0
     except Exception as e:
         n = int((archivio.leggi("cfd_stato/monitor") or {}).get("erroriConsecutivi", 0)) + 1
