@@ -71,13 +71,13 @@ se due avvii arrivano insieme, il blocco `concurrency` del flusso li mette in fi
 ### 1. Crea un token GitHub con il minimo dei permessi
 1. GitHub → foto profilo → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
 2. Nome: `cron idrometria`. Scadenza: la più lunga consentita (annotati la data per rinnovarlo).
-3. Repository access: **Only select repositories** → solo `idrometria-brenta-curtarolo`.
+3. Repository access: **Only select repositories** → solo `Server-app1`.
 4. Permissions → Repository permissions → **Actions: Read and write** (nient'altro).
 5. Generate e copia il token (inizia per `github_pat_`). Non scriverlo in chat né nel codice: va solo nel servizio di cron.
 
 ### 2. Crea il lavoro su cron-job.org
 1. Registrati su https://cron-job.org e crea un lavoro ("Create cronjob").
-2. **URL**: `https://api.github.com/repos/simone-9/idrometria-brenta-curtarolo/actions/workflows/idrometria.yml/dispatches`
+2. **URL**: `https://api.github.com/repos/simone-9/Server-app1/actions/workflows/idrometria.yml/dispatches`
 3. **Schedule**: ogni 10 minuti.
 4. In *Advanced*:
    - Request method: **POST**
