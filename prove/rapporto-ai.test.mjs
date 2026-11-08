@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 import assert from 'node:assert/strict';
-const { proteggi, ripristina, leggiRisposta, promptRapporto, esegui } = await import('../scripts/rapporto-ai.mjs');
+const { proteggi, ripristina, leggiRisposta, promptRapporto, esegui, eseguiPendenti } = await import('../scripts/rapporto-ai.mjs');
 // privacy
 let p = proteggi('Chiamato Rossi al 333 1234567, mail a.b@x.it, CF RSSMRA80A01H501U, via Roma 12.');
 assert.ok(!/333|a\.b@|RSSMRA/.test(p.testo)); assert.equal(p.mappa.length, 3);
@@ -54,4 +54,20 @@ assert.equal(await esegui('r1', { env, fetch: t.f, log: L }), true); assert.equa
 assert.ok(!JSON.stringify(t.gruppi).includes('333 1234567'), 'telefono non inviato'); assert.match(JSON.stringify(t.gruppi[0].messages[0]), /UNA SOLA frase/);
 t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: 'x' }, ['{"riga":"' + 'a'.repeat(300) + '"}']); assert.equal(await esegui('r2', { env, fetch: t.f, log: L }), false); assert.equal(t.stato().stato, 'Errore');
 t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: '' }, ['{}']); assert.equal(await esegui('r3', { env, fetch: t.f, log: L }), false);
+// giro programmato: prende in carico solo le richieste in stato «Richiesta» (Operatore SOC e Caposquadra non avviano il servizio da soli)
+{
+  const NOME = i => 'projects/proj/databases/(default)/documents/rapporti_ai/' + i, docs = { a1: { stato: 'Richiesta', lavoro: 'tagliato albero caduto' }, b2: { stato: 'Pronto', lavoro: 'x' }, c3: { stato: 'Richiesta', modo: 'riga', lavoro: 'rimosso albero' }, d4: { stato: 'In corso', lavoro: 'y' } };
+  const chiamate = [], ok = (j, st = 200) => ({ ok: st < 300, status: st, json: async () => j, headers: { get: () => null } });
+  const f = async (url, init = {}) => {
+    if (url.includes('oauth2')) return ok({ access_token: 't' });
+    if (url.includes('api.groq.com')) return ok({ choices: [{ message: { content: JSON.parse(init.body).messages[0].content.includes('UNA SOLA') ? '{"riga":"Albero rimosso."}' : '{"lavoro":"Tagliato l\'albero caduto."}' } }] });
+    if (init.method === 'PATCH') { const id = url.split('/rapporti_ai/')[1].split('?')[0]; for (const [k, v] of Object.entries(JSON.parse(init.body).fields)) docs[id][k] = v.stringValue; chiamate.push(id); return ok({}); }
+    if (url.includes('rapporti_ai?pageSize')) return ok({ documents: Object.entries(docs).map(([i, d]) => ({ name: NOME(i), fields: Object.fromEntries(Object.entries(d).map(([k, v]) => [k, S(v)])) })) });
+    const m = url.match(/\/rapporti_ai\/([^?]+)/); if (m) return ok({ updateTime: 't', fields: Object.fromEntries(Object.entries(docs[m[1]]).map(([k, v]) => [k, S(v)])) });
+    throw new Error('url non previsto ' + url);
+  };
+  const log2 = []; const n = await eseguiPendenti({ env, fetch: f, log: m => log2.push(m) });
+  assert.equal(n, 2); assert.equal(docs.a1.stato, 'Pronto'); assert.equal(docs.c3.stato, 'Pronto'); assert.equal(docs.b2.stato, 'Pronto'); assert.equal(docs.d4.stato, 'In corso');
+  assert.ok(!log2.join(' ').includes('albero'), 'nessun testo nei log'); assert.match(log2[0], /in attesa: 2/);
+}
 console.log('RAPPORTO AI OK');

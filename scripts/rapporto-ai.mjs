@@ -223,7 +223,27 @@ export async function esegui(id, deps = {}) {
   }
 }
 
+// giro programmato: chi non è amministratore (Operatore SOC, Caposquadra) non può avviare il servizio da solo, quindi qui si
+// prendono in carico tutte le richieste rimaste in stato «Richiesta» (una per volta, il testo non compare mai nel log)
+export async function eseguiPendenti(deps = {}) {
+  const env = deps.env || process.env, f = deps.fetch || fetch, log = deps.log || console.log;
+  const k = chiaveServizio(env), base = fsBase(k, env), tok = await accessToken(k, f);
+  const r = await f(`${base}/${PREF}${COLLEZIONE}?pageSize=100`, { headers: { authorization: 'Bearer ' + tok } });
+  if (!r.ok) throw new Error('Elenco non riuscito (' + r.status + ')');
+  const j = await r.json(), ids = [];
+  for (const d of (j.documents || [])) {
+    const c = daFs({ mapValue: { fields: d.fields || {} } }) || {};
+    const id = String(d.name || '').split('/').pop();
+    if (c.stato === 'Richiesta' && /^[A-Za-z0-9_-]{1,64}$/.test(id)) ids.push(id);
+  }
+  log(`[rapporto-ai] richieste in attesa: ${ids.length}`);
+  let fatte = 0;
+  for (const id of ids) { try { if (await esegui(id, deps)) fatte++; } catch (e) { log(`[rapporto-ai] ${id}: errore - ${String(e.message || e).slice(0, 120)}`); } }
+  return fatte;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const id = process.argv[2] || process.env.ID_RICHIESTA || '';
-  esegui(id).then(ok => { process.exit(ok === false ? 1 : 0); }).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
+  if (!id) eseguiPendenti().then(() => process.exit(0)).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
+  else esegui(id).then(ok => { process.exit(ok === false ? 1 : 0); }).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
 }
