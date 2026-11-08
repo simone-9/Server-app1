@@ -123,6 +123,32 @@ export function promptRapporto(dati, campi) {
   CAMPI.forEach(c => { if (campi[c]) righe.push(`${c} (${ETI[c]}):\n${campi[c]}`); });
   return [{ role: 'system', content: sist }, { role: 'user', content: righe.join('\n\n') }];
 }
+// Riepilogo di una riga per la bacheca (modo «riga»): una sola frase, senza nomi, indirizzi né telefoni
+export function promptRiga(dati, testo) {
+  const sist = [
+    'Sei un assistente che scrive un breve riepilogo per i volontari di un gruppo comunale di Protezione Civile, alla fine di un intervento.',
+    'Scrivi UNA SOLA frase in italiano, impersonale, chiara e neutra, di al massimo 140 caratteri, che dice che cosa è stato fatto.',
+    'Regole:',
+    '- Usa SOLO le informazioni fornite. Non inventare fatti, numeri, luoghi, cause o conseguenze, e non aggiungere valutazioni.',
+    '- Non citare nomi di persone, indirizzi, numeri di telefono né segnaposto tra parentesi quadre.',
+    '- Nessun elenco, nessuna formattazione, niente emoji.',
+    'Rispondi SOLO con un oggetto JSON: {"riga": ""}.'
+  ].join('\n');
+  const righe = [`Tipo di intervento: ${dati.tipo || 'non indicato'}`, `Esito: ${dati.esito || 'non indicato'}`, `Lavoro svolto:\n${testo}`];
+  return [{ role: 'system', content: sist }, { role: 'user', content: righe.join('\n\n') }];
+}
+async function rigaDaTesto(ctx, id, dati, log) {
+  const t = String(dati.lavoro || '').trim().slice(0, 1500);
+  if (!t) throw new Error('Nessun testo da riassumere');
+  const p = proteggi(t);
+  const { testo, modello } = await chiamaGroq(ctx, promptRiga({ tipo: String(dati.tipo || '').slice(0, 80), esito: String(dati.esito || '').slice(0, 60) }, p.testo));
+  const out = leggiRisposta(testo);
+  let riga = out && typeof out.riga === 'string' ? out.riga.replace(/\s*\[DATO\d+\]/g, '').replace(/\s+/g, ' ').trim() : '';
+  if (!riga || riga.length > 220) throw new Error('Il modello non ha prodotto una riga utilizzabile');
+  await scrivi(ctx, id, { ai_riga: riga, stato: 'Pronto', modello, pronto: new Date().toISOString(), errore: '' });
+  log(`[rapporto-ai] ${id}: riga pronta (modello ${modello})`);
+  return true;
+}
 export function leggiRisposta(testo) {
   const t = String(testo || '').replace(/^```[a-z]*\s*|\s*```$/gi, '').trim();
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
@@ -166,6 +192,7 @@ export async function esegui(id, deps = {}) {
   if (dati.stato !== 'Richiesta') { log(`[rapporto-ai] ${id}: stato «${dati.stato}», niente da fare`); return false; }
   try { await scrivi(ctx, id, { stato: 'In corso', errore: '' }, updateTime); } catch (e) { log(`[rapporto-ai] ${id}: già preso in carico`); return false; }
   try {
+    if (dati.modo === 'riga') { const ok = await rigaDaTesto(ctx, id, dati, log); const n = await pulisciVecchi(ctx); if (n) log(`[rapporto-ai] pulizia: ${n} documenti vecchi cancellati`); return ok; }
     const campi = {}, mappe = {};
     CAMPI.forEach(c => {
       const t = String(dati[c] || '').trim().slice(0, 2000);
