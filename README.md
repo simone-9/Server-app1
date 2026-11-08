@@ -8,6 +8,7 @@ Ogni gruppo ha i suoi dati sotto `gruppi/<codice>/…`: tutti gli script leggono
 | Idrometria ARPAV, avvisi Telegram, push livelli e allerte CFD, registro eventi | `idrometria.yml` | `scripts/idro.mjs` |
 | Push dei nuovi avvisi della bacheca | `bacheca-push.yml` | `scripts/bacheca-push.mjs` |
 | Richieste agli enti (bozza con Groq, invio email) | `ente-mail.yml` | `scripts/ente-mail.mjs` |
+| Revisione del testo del rapporto di intervento («Migliora il testo», con Groq; avviata dall'app) | `rapporto-ai.yml` | `scripts/rapporto-ai.mjs` |
 | Lettura del bollettino CFD Veneto | `monitor-allerte.yml` | `monitor-allerte/monitor_allerte.py` |
 | Eliminazione degli account di un gruppo cancellato da Firebase Authentication (avviata dall'app dal super admin, o a mano) | `elimina-account.yml` | `scripts/elimina-account.mjs` |
 | Osservatorio, archivio, analisi (specifici del Brenta) | `osservatorio-*.yml`, `analisi-*.yml` | `scripts/…` |
