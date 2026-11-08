@@ -48,4 +48,10 @@ t = prova({ stato: 'Richiesta', lavoro: 'tagliato albero' }, [401]); assert.equa
 // modello di riserva dopo 404
 t = prova({ stato: 'Richiesta', lavoro: 'tagliato albero caduto' }, [404, '{"lavoro":"Tagliato l\'albero caduto."}']); assert.equal(await esegui('x5', { env, fetch: t.f, log: L, attesa: 0 }), true);
 await assert.rejects(() => esegui('../x', { env, fetch: t.f }), /ID non valido/);
+// modo «riga»: una frase per la bacheca, senza segnaposto né a capo
+t = prova({ stato: 'Richiesta', modo: 'riga', tipo: 'Albero caduto', esito: 'Risolto', lavoro: 'Tagliato albero caduto, chiamato 333 1234567' }, ['{"riga":"Rimosso un albero caduto sulla carreggiata [DATO1] e ripristinata la viabilità."}']);
+assert.equal(await esegui('r1', { env, fetch: t.f, log: L }), true); assert.equal(t.stato().stato, 'Pronto'); assert.equal(t.stato().ai_riga, 'Rimosso un albero caduto sulla carreggiata e ripristinata la viabilità.');
+assert.ok(!JSON.stringify(t.gruppi).includes('333 1234567'), 'telefono non inviato'); assert.match(JSON.stringify(t.gruppi[0].messages[0]), /UNA SOLA frase/);
+t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: 'x' }, ['{"riga":"' + 'a'.repeat(300) + '"}']); assert.equal(await esegui('r2', { env, fetch: t.f, log: L }), false); assert.equal(t.stato().stato, 'Errore');
+t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: '' }, ['{}']); assert.equal(await esegui('r3', { env, fetch: t.f, log: L }), false);
 console.log('RAPPORTO AI OK');
