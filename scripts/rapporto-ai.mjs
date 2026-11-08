@@ -1,4 +1,5 @@
 // Rapporto di intervento: l'AI (Groq) rivede la forma dei testi (lavoro svolto, materiali, criticità, da fare).
+// Modi: «riga» (frase per la bacheca), «verbale» (relazione e note del verbale dell'evento), «bozza» (relazione del verbale scritta dai dati dell'evento).
 //
 //   node scripts/rapporto-ai.mjs <id>    legge il documento «rapporti_ai/<id>» scritto dall'app, chiede a Groq la versione rivista e la riscrive nello stesso documento
 //
@@ -202,6 +203,21 @@ export function promptVerbale(dati, campi) {
   return [{ role: 'system', content: sist }, { role: 'user', content: righe.join('\n\n') }];
 }
 
+// bozza del verbale (modo «bozza»): dall'elenco dei fatti dell'evento, preparato dall'app, una relazione in prosa
+export function promptBozzaVerbale(dati, fatti) {
+  const sist = [
+    'Sei un assistente che prepara la bozza della relazione del verbale di un evento di un gruppo comunale di Protezione Civile.',
+    'Ricevi un elenco di dati dell\'evento (periodo, richieste di intervento, squadre, mezzi, livelli del fiume, giornale di bordo). Scrivi una relazione in italiano formale, in forma impersonale e in ordine cronologico, divisa in pochi paragrafi brevi.',
+    'Regole:',
+    '- Usa SOLO i dati forniti. Non inventare fatti, numeri, orari, luoghi, nomi, mezzi, cause o conseguenze, e non aggiungere valutazioni o ringraziamenti.',
+    '- Riporta i numeri, gli orari, le targhe e le sigle esattamente come sono scritti; i segnaposto tra parentesi quadre come [DATO1] devono comparire identici.',
+    '- Raggruppa le richieste simili (per esempio «sono stati eseguiti 5 interventi per allagamento di scantinati») invece di elencarle una per una, ma cita quelle con esito particolare.',
+    '- Non superare le 400 parole.',
+    'Rispondi SOLO con un oggetto JSON {"relazione":""}, senza altro testo.'
+  ].join('\n');
+  return [{ role: 'system', content: sist }, { role: 'user', content: `Evento: ${dati.tipo || 'non indicato'}\n\nDati dell'evento:\n${fatti}` }];
+}
+
 // ---------- azione ----------
 export async function esegui(id, deps = {}) {
   const env = deps.env || process.env, f = deps.fetch || fetch, log = deps.log || console.log;
@@ -213,20 +229,21 @@ export async function esegui(id, deps = {}) {
   try { await scrivi(ctx, id, { stato: 'In corso', errore: '' }, updateTime); } catch (e) { log(`[rapporto-ai] ${id}: già preso in carico`); return false; }
   try {
     if (dati.modo === 'riga') { const ok = await rigaDaTesto(ctx, id, dati, log); const n = await pulisciVecchi(ctx); if (n) log(`[rapporto-ai] pulizia: ${n} documenti vecchi cancellati`); return ok; }
-    const campi = {}, mappe = {}, verbale = dati.modo === 'verbale', lista = verbale ? CAMPI_VERBALE : CAMPI;
+    const bozza = dati.modo === 'bozza', verbale = bozza || dati.modo === 'verbale';
+    const campi = {}, mappe = {}, lista = bozza ? ['relazione'] : verbale ? CAMPI_VERBALE : CAMPI;
     lista.forEach(c => {
-      const t = String(dati[c] || '').trim().slice(0, verbale ? 6000 : 2000);
+      const t = String(dati[c] || '').trim().slice(0, bozza ? 9000 : verbale ? 6000 : 2000);
       if (!t) return;
       const p = proteggi(t); campi[c] = p.testo; mappe[c] = p.mappa;
     });
     if (!Object.keys(campi).length) throw new Error('Nessun testo da rivedere');
-    const { testo, modello } = await chiamaGroq(ctx, verbale ? promptVerbale({ tipo: String(dati.tipo || '').slice(0, 120) }, campi) : promptRapporto({ tipo: String(dati.tipo || '').slice(0, 80), esito: String(dati.esito || '').slice(0, 60) }, campi), verbale ? 4000 : 2000);
+    const { testo, modello } = await chiamaGroq(ctx, bozza ? promptBozzaVerbale({ tipo: String(dati.tipo || '').slice(0, 120) }, campi.relazione) : verbale ? promptVerbale({ tipo: String(dati.tipo || '').slice(0, 120) }, campi) : promptRapporto({ tipo: String(dati.tipo || '').slice(0, 80), esito: String(dati.esito || '').slice(0, 60) }, campi), verbale ? 4000 : 2000);
     const out = leggiRisposta(testo);
     if (!out) throw new Error('Risposta del modello non leggibile');
     const risultato = {}; let saltati = 0, fatti = 0;
     for (const c of Object.keys(campi)) {
       const t = typeof out[c] === 'string' ? out[c].trim() : '';
-      if (!t || t.length > campi[c].length * 2 + 120) { saltati++; continue; }   // vuoto o gonfiato: si tiene l'originale
+      if (!t || t.length > (bozza ? Math.max(campi[c].length * 3, 2500) + 600 : campi[c].length * 2 + 120)) { saltati++; continue; }   // vuoto o gonfiato: si tiene l'originale
       const r = ripristina(t, mappe[c]);
       if (r === null) { saltati++; continue; }
       risultato['ai_' + c] = r; fatti++;
