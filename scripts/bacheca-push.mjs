@@ -35,7 +35,7 @@ export async function main(opz = {}) {
     const c = a.campi, urgente = c.urgente === true, chiamata = c.chiamata === true, tc = Date.parse(c.creato || '');
     const allarme = chiamata && (isNaN(tc) || (opz.ora || Date.now()) - tc <= MAX_ETA_SVEGLIA_MS);
     try {
-      const e = await inviaPush({ titolo: (chiamata ? 'CHIAMATA DI ATTIVAZIONE · ' : urgente ? 'URGENTE · ' : 'Nuovo avviso · ') + breve(c.titolo, 80), testo: breve(c.testo, 140), tag: 'bacheca-' + a.id, icona: chiamata || urgente ? '🚨' : '📌', allarme, avvisoId: a.id }, Object.assign({}, opz, { escludiEmail: [c.creatoEmail] }));
+      const e = await inviaPush({ titolo: (chiamata ? 'CHIAMATA DI ATTIVAZIONE · ' : urgente ? 'URGENTE · ' : 'Nuovo avviso · ') + breve(c.titolo, 80), testo: breve(c.testo, 140), tag: 'bacheca-' + a.id, icona: chiamata || urgente ? '🚨' : '📌', allarme, urgente, avvisoId: a.id }, Object.assign({}, opz, { escludiEmail: [c.creatoEmail] }));
       console.log(`Push avviso «${breve(c.titolo, 40)}»: ${e.inviati}/${e.dispositivi} dispositivi, ${e.rimossi} rimossi`);
       inviate++;
     } catch (e) {

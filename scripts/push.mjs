@@ -33,11 +33,33 @@ function prefDaFs(v) {
   return o;
 }
 // Il messaggio va al dispositivo? Si decide dal tag: idro-prova (sempre), idro-prev-N (previsione), idro-<stazione>-N (soglia N superata), cfd-… (allerta meteo), bacheca-… (avvisi), calendario-… (eventi e promemoria), richiesta-… (richieste di intervento)
-export function pushAmmesso(pref, tag, allarme = false) {
+// Orari di riposo (impostazioni di notifica del dispositivo): pref.riposo = true, riposoDa / riposoA = minuti dalla mezzanotte (ora italiana).
+// Dentro la fascia arrivano solo le notifiche urgenti; le altre non vengono inviate a quel dispositivo (restano consultabili nell'app).
+export function minutiItalia(ora = new Date()) {
+  const p = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(ora);
+  return Number(p.find(x => x.type === 'hour').value) * 60 + Number(p.find(x => x.type === 'minute').value);
+}
+export function inRiposo(pref, ora = new Date()) {
+  if (!pref || pref.riposo !== true) return false;
+  const da = Number.isFinite(pref.riposoDa) ? pref.riposoDa : 22 * 60, a = Number.isFinite(pref.riposoA) ? pref.riposoA : 7 * 60, m = minutiItalia(ora);
+  if (da === a) return false;
+  return da < a ? (m >= da && m < a) : (m >= da || m < a);   // fascia che attraversa la mezzanotte (es. 22:00-07:00)
+}
+// Urgenti anche di notte: chiamata di attivazione (allarme), avvisi urgenti della bacheca (urgente), richiesta urgente e squadra assegnata, idrometria da Guardia 2, allerta meteo arancione o rossa.
+export function eUrgente(tag, urgente = false) {
+  if (urgente) return true;
+  const t = String(tag || '');
+  if (/^richiesta-(urg|sq)-/.test(t)) return true;
+  const m = /^idro-.+-(\d+)$/.exec(t); if (m && !/^idro-prev-/.test(t)) return Number(m[1]) >= 2;
+  const c = /^cfd-.+-(\d+)$/.exec(t); if (c) return Number(c[1]) >= 2;
+  return false;
+}
+export function pushAmmesso(pref, tag, allarme = false, urgente = false, ora = new Date()) {
   const t = String(tag || '');
   if (!pref || t === 'idro-prova') return true;
   if (pref.tutte === false) return false;
-  if (allarme) return true;   // chiamata di attivazione: arriva anche a chi ha spento le notifiche della bacheca
+  if (allarme) return true;   // chiamata di attivazione: arriva anche a chi ha spento le notifiche della bacheca e di notte
+  if (inRiposo(pref, ora) && !eUrgente(t, urgente)) return false;
   if (/^cfd-/.test(t)) return pref.cfd !== false;
   if (/^bacheca-/.test(t)) return pref.bacheca !== false;
   if (/^richiesta-/.test(t)) return pref.richieste !== false;
@@ -69,7 +91,7 @@ export async function inviaPush(msg, opzioni = {}) {
   if (!k) return { saltato: true };
   const escl = new Set((opzioni.escludiEmail || []).map(x => String(x || '').toLowerCase()).filter(Boolean));
   const solo = Array.isArray(opzioni.soloEmail) ? new Set(opzioni.soloEmail.map(x => String(x || '').toLowerCase()).filter(Boolean)) : null;
-  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && (!solo || (d.email && solo.has(d.email))) && pushAmmesso(d.pref, msg.tag, !!msg.allarme));
+  const tok = await accessToken(k, f), dispositivi = (await elencoDispositivi(k, tok, f)).filter(d => !(d.email && escl.has(d.email)) && (!solo || (d.email && solo.has(d.email))) && pushAmmesso(d.pref, msg.tag, !!msg.allarme, !!msg.urgente, opzioni.ora ? new Date(opzioni.ora) : new Date()));
   let inviati = 0, rimossi = 0;
   for (const d of dispositivi) {
     const r = await f(`https://fcm.googleapis.com/v1/projects/${k.project_id}/messages:send`, {
