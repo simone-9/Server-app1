@@ -1,0 +1,42 @@
+name: Pulizia esecuzioni
+
+# Cancella le esecuzioni di GitHub Actions concluse da più di 24 ore (i registri vecchi non servono e riempiono l'elenco).
+# Parte da solo ogni 6 ore; si può avviare anche a mano (Actions → Pulizia esecuzioni → Run workflow),
+# con «prova» attiva elenca soltanto senza cancellare.
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      ore:
+        description: 'Cancella le esecuzioni più vecchie di quante ore'
+        type: string
+        default: '24'
+      prova:
+        description: 'Solo prova: elenca senza cancellare'
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: pulizia-esecuzioni
+  cancel-in-progress: false
+
+jobs:
+  pulizia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Cancella le esecuzioni vecchie
+        run: node scripts/pulizia-esecuzioni.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORE: ${{ inputs.ore || '24' }}
+          SOLO_PROVA: ${{ inputs.prova && '1' || '0' }}
