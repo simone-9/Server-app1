@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 import assert from 'node:assert/strict';
-const { proteggi, ripristina, leggiRisposta, promptRapporto, esegui, eseguiPendenti } = await import('../scripts/rapporto-ai.mjs');
+const { proteggi, ripristina, leggiRisposta, promptRapporto, esegui, eseguiPendenti, promptVerbale } = await import('../scripts/rapporto-ai.mjs');
 // privacy
 let p = proteggi('Chiamato Rossi al 333 1234567, mail a.b@x.it, CF RSSMRA80A01H501U, via Roma 12.');
 assert.ok(!/333|a\.b@|RSSMRA/.test(p.testo)); assert.equal(p.mappa.length, 3);
@@ -54,6 +54,12 @@ assert.equal(await esegui('r1', { env, fetch: t.f, log: L }), true); assert.equa
 assert.ok(!JSON.stringify(t.gruppi).includes('333 1234567'), 'telefono non inviato'); assert.match(JSON.stringify(t.gruppi[0].messages[0]), /UNA SOLA frase/);
 t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: 'x' }, ['{"riga":"' + 'a'.repeat(300) + '"}']); assert.equal(await esegui('r2', { env, fetch: t.f, log: L }), false); assert.equal(t.stato().stato, 'Errore');
 t = prova({ stato: 'Richiesta', modo: 'riga', lavoro: '' }, ['{}']); assert.equal(await esegui('r3', { env, fetch: t.f, log: L }), false);
+// verbale dell'evento: campi relazione e note, prompt dedicato, telefoni oscurati
+t = prova({ stato: 'Richiesta', modo: 'verbale', tipo: 'Allagamenti', relazione: 'allerta rossa dalle 10, chiamato referente al 333 1234567, squadre uscite', note: 'tutto ok' }, ['{"relazione":"Allerta rossa dalle 10; contattato il referente al [DATO1]. Squadre uscite.","note":"Tutto in ordine."}']);
+assert.equal(await esegui('v1', { env, fetch: t.f, log: L }), true); assert.equal(t.stato().stato, 'Pronto');
+assert.equal(t.stato().ai_relazione, 'Allerta rossa dalle 10; contattato il referente al 333 1234567. Squadre uscite.'); assert.equal(t.stato().ai_note, 'Tutto in ordine.'); assert.equal(t.stato().ai_lavoro, undefined);
+assert.ok(!JSON.stringify(t.gruppi).includes('333 1234567'), 'telefono non inviato'); assert.match(t.gruppi[0].messages[0].content, /verbale di un evento/); assert.equal(t.gruppi[0].max_completion_tokens, 4000);
+assert.match(promptVerbale({ tipo: 'X' }, { relazione: 'a' })[1].content, /relazione \(Relazione\)/);
 // giro programmato: prende in carico solo le richieste in stato «Richiesta» (Operatore SOC e Caposquadra non avviano il servizio da soli)
 {
   const NOME = i => 'projects/proj/databases/(default)/documents/rapporti_ai/' + i, docs = { a1: { stato: 'Richiesta', lavoro: 'tagliato albero caduto' }, b2: { stato: 'Pronto', lavoro: 'x' }, c3: { stato: 'Richiesta', modo: 'riga', lavoro: 'rimosso albero' }, d4: { stato: 'In corso', lavoro: 'y' } };
