@@ -1,14 +1,17 @@
 name: Rapporto di intervento - testo rivisto
 
-# Avviato dall'app (pulsante «Migliora il testo» nel rapporto): non parte da solo.
+# Avviato dall'app (pulsante «Migliora il testo» nel rapporto): subito se lo chiede l'amministratore;
+# per Operatore SOC e Caposquadra, che non hanno il token, parte al giro programmato (ogni 5 minuti).
 # L'input pubblico nel log è solo l'ID del documento di lavoro, mai testi.
 on:
+  schedule:
+    - cron: '2-57/5 * * * *'   # ogni 5 minuti (GitHub può ritardare un po' le esecuzioni programmate)
   workflow_dispatch:
     inputs:
       id:
-        description: 'ID del documento di lavoro (rapporti_ai)'
+        description: 'ID del documento di lavoro (rapporti_ai); vuoto = tutte le richieste in attesa'
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read

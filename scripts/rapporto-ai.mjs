@@ -15,6 +15,7 @@ const GRUPPO = (process.env.GRUPPO_ID || '').trim().toLowerCase();
 export const COLLEZIONE = 'rapporti_ai';
 const PREF = GRUPPO ? `gruppi/${GRUPPO}/` : '';
 export const CAMPI = ['lavoro', 'materiali', 'criticita', 'segue'];
+export const CAMPI_VERBALE = ['relazione', 'note'];   // verbale dell'evento (modo «verbale»)
 const MODELLI_PREDEFINITI = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
 const b64u = b => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 const pausa = ms => new Promise(r => setTimeout(r, ms));
@@ -155,7 +156,7 @@ export function leggiRisposta(testo) {
   if (a < 0 || b <= a) return null;
   try { const o = JSON.parse(t.slice(a, b + 1)); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
 }
-async function chiamaGroq(ctx, messaggi) {
+async function chiamaGroq(ctx, messaggi, maxTok = 2000) {
   const chiave = ctx.env.GROQ_API_KEY;
   if (!chiave) throw new Error('Segreto GROQ_API_KEY mancante');
   const base = ctx.env.GROQ_BASE || 'https://api.groq.com/openai/v1';
@@ -163,7 +164,7 @@ async function chiamaGroq(ctx, messaggi) {
   let ultimo = 'nessun modello disponibile';
   for (const modello of modelli) {
     for (let tentativo = 0; tentativo < 3; tentativo++) {
-      const r = await ctx.f(base + '/chat/completions', { method: 'POST', headers: { authorization: 'Bearer ' + chiave, 'content-type': 'application/json' }, body: JSON.stringify({ model: modello, messages: messaggi, temperature: 0.2, max_completion_tokens: 2000 }) });
+      const r = await ctx.f(base + '/chat/completions', { method: 'POST', headers: { authorization: 'Bearer ' + chiave, 'content-type': 'application/json' }, body: JSON.stringify({ model: modello, messages: messaggi, temperature: 0.2, max_completion_tokens: maxTok }) });
       if (r.status === 401 || r.status === 403) throw new Error('Chiave Groq non valida o senza permessi');
       if (r.status === 429) { ultimo = 'limite di richieste Groq raggiunto'; const s = Math.min(Number(r.headers?.get?.('retry-after')) || 5, 20); if (tentativo < 2) { await pausa((ctx.attesa ?? 1) * s * 1000); continue; } break; }
       if (!r.ok) {
@@ -182,6 +183,25 @@ async function chiamaGroq(ctx, messaggi) {
   throw new Error('Nessun modello Groq ha risposto: ' + ultimo);
 }
 
+// verbale dell'evento: stessa revisione, con campi e contesto propri
+export function promptVerbale(dati, campi) {
+  const sist = [
+    'Sei un assistente che rivede i testi del verbale di un evento di un gruppo comunale di Protezione Civile (relazione e note e osservazioni).',
+    'Riscrivi ciascun campo in italiano corretto, chiaro e formale, in forma impersonale, mantenendo la divisione in paragrafi e gli elenchi del testo originale.',
+    'Regole:',
+    '- Usa SOLO le informazioni presenti nel testo. Non inventare fatti, numeri, orari, luoghi, nomi, mezzi, cause o conseguenze, e non aggiungere valutazioni.',
+    '- Mantieni invariati numeri, misure, sigle e i segnaposto tra parentesi quadre come [DATO1]: devono comparire identici nel testo riscritto.',
+    '- Correggi errori di ortografia, punteggiatura e maiuscole; elimina ripetizioni; se il testo è tutto maiuscolo usa le maiuscole normali.',
+    '- Non allungare: il testo riscritto deve essere lungo più o meno quanto l\'originale.',
+    '- Un campo non fornito o vuoto resta una stringa vuota.',
+    'Rispondi SOLO con un oggetto JSON con queste chiavi, senza altro testo: ' + JSON.stringify(Object.fromEntries(CAMPI_VERBALE.map(c => [c, '']))) + '.'
+  ].join('\n');
+  const ETI = { relazione: 'Relazione', note: 'Note e osservazioni' };
+  const righe = [`Evento: ${dati.tipo || 'non indicato'}`];
+  CAMPI_VERBALE.forEach(c => { if (campi[c]) righe.push(`${c} (${ETI[c]}):\n${campi[c]}`); });
+  return [{ role: 'system', content: sist }, { role: 'user', content: righe.join('\n\n') }];
+}
+
 // ---------- azione ----------
 export async function esegui(id, deps = {}) {
   const env = deps.env || process.env, f = deps.fetch || fetch, log = deps.log || console.log;
@@ -193,14 +213,14 @@ export async function esegui(id, deps = {}) {
   try { await scrivi(ctx, id, { stato: 'In corso', errore: '' }, updateTime); } catch (e) { log(`[rapporto-ai] ${id}: già preso in carico`); return false; }
   try {
     if (dati.modo === 'riga') { const ok = await rigaDaTesto(ctx, id, dati, log); const n = await pulisciVecchi(ctx); if (n) log(`[rapporto-ai] pulizia: ${n} documenti vecchi cancellati`); return ok; }
-    const campi = {}, mappe = {};
-    CAMPI.forEach(c => {
-      const t = String(dati[c] || '').trim().slice(0, 2000);
+    const campi = {}, mappe = {}, verbale = dati.modo === 'verbale', lista = verbale ? CAMPI_VERBALE : CAMPI;
+    lista.forEach(c => {
+      const t = String(dati[c] || '').trim().slice(0, verbale ? 6000 : 2000);
       if (!t) return;
       const p = proteggi(t); campi[c] = p.testo; mappe[c] = p.mappa;
     });
     if (!Object.keys(campi).length) throw new Error('Nessun testo da rivedere');
-    const { testo, modello } = await chiamaGroq(ctx, promptRapporto({ tipo: String(dati.tipo || '').slice(0, 80), esito: String(dati.esito || '').slice(0, 60) }, campi));
+    const { testo, modello } = await chiamaGroq(ctx, verbale ? promptVerbale({ tipo: String(dati.tipo || '').slice(0, 120) }, campi) : promptRapporto({ tipo: String(dati.tipo || '').slice(0, 80), esito: String(dati.esito || '').slice(0, 60) }, campi), verbale ? 4000 : 2000);
     const out = leggiRisposta(testo);
     if (!out) throw new Error('Risposta del modello non leggibile');
     const risultato = {}; let saltati = 0, fatti = 0;
@@ -223,7 +243,27 @@ export async function esegui(id, deps = {}) {
   }
 }
 
+// giro programmato: chi non è amministratore (Operatore SOC, Caposquadra) non può avviare il servizio da solo, quindi qui si
+// prendono in carico tutte le richieste rimaste in stato «Richiesta» (una per volta, il testo non compare mai nel log)
+export async function eseguiPendenti(deps = {}) {
+  const env = deps.env || process.env, f = deps.fetch || fetch, log = deps.log || console.log;
+  const k = chiaveServizio(env), base = fsBase(k, env), tok = await accessToken(k, f);
+  const r = await f(`${base}/${PREF}${COLLEZIONE}?pageSize=100`, { headers: { authorization: 'Bearer ' + tok } });
+  if (!r.ok) throw new Error('Elenco non riuscito (' + r.status + ')');
+  const j = await r.json(), ids = [];
+  for (const d of (j.documents || [])) {
+    const c = daFs({ mapValue: { fields: d.fields || {} } }) || {};
+    const id = String(d.name || '').split('/').pop();
+    if (c.stato === 'Richiesta' && /^[A-Za-z0-9_-]{1,64}$/.test(id)) ids.push(id);
+  }
+  log(`[rapporto-ai] richieste in attesa: ${ids.length}`);
+  let fatte = 0;
+  for (const id of ids) { try { if (await esegui(id, deps)) fatte++; } catch (e) { log(`[rapporto-ai] ${id}: errore - ${String(e.message || e).slice(0, 120)}`); } }
+  return fatte;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const id = process.argv[2] || process.env.ID_RICHIESTA || '';
-  esegui(id).then(ok => { process.exit(ok === false ? 1 : 0); }).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
+  if (!id) eseguiPendenti().then(() => process.exit(0)).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
+  else esegui(id).then(ok => { process.exit(ok === false ? 1 : 0); }).catch(e => { console.error('Errore: ' + (e.message || e)); process.exit(1); });
 }
