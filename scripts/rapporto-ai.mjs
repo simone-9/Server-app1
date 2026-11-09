@@ -207,12 +207,15 @@ export function promptVerbale(dati, campi) {
 export function promptBozzaVerbale(dati, fatti) {
   const sist = [
     'Sei un assistente che prepara la bozza della relazione del verbale di un evento di un gruppo comunale di Protezione Civile.',
-    'Ricevi un elenco di dati dell\'evento (periodo, richieste di intervento, squadre, mezzi, livelli del fiume, giornale di bordo). Scrivi una relazione in italiano formale, in forma impersonale e in ordine cronologico, divisa in pochi paragrafi brevi.',
+    'Ricevi i dati dell\'evento: un riepilogo (periodo, richieste, squadre, enti, mezzi, materiali, sala operativa, livelli del fiume) e, se presente, una «Cronologia» con i fatti in ordine di tempo, presi dal registro, dal diario radio e dalle uscite dei mezzi.',
+    'Scrivi in italiano formale e in forma impersonale una relazione NARRATIVA: racconta l\'evento come una cronaca, nell\'ordine in cui i fatti sono avvenuti, dall\'apertura della sala operativa e dall\'attivazione dei volontari, attraverso le richieste, le uscite e i rientri delle squadre e dei mezzi e le comunicazioni rilevanti, fino alla chiusura. Indica gli orari dei passaggi principali. Dividi il testo in paragrafi brevi, uno per fase o per giornata.',
     'Regole:',
     '- Usa SOLO i dati forniti. Non inventare fatti, numeri, orari, luoghi, nomi, mezzi, cause o conseguenze, e non aggiungere valutazioni o ringraziamenti.',
     '- Riporta i numeri, gli orari, le targhe e le sigle esattamente come sono scritti; i segnaposto tra parentesi quadre come [DATO1] devono comparire identici.',
-    '- Raggruppa le richieste simili (per esempio «sono stati eseguiti 5 interventi per allagamento di scantinati») invece di elencarle una per una, ma cita quelle con esito particolare.',
-    '- Non superare le 400 parole.',
+    '- Segui la Cronologia come traccia; i fatti ravvicinati dello stesso tipo raccontali insieme (per esempio «tra le 21:10 e le 21:40 sono arrivate 4 richieste per allagamento di scantinati»), ma cita quelli con esito particolare.',
+    '- Le comunicazioni radio e le voci del registro di routine (prove radio, accessi, salvataggi) non vanno raccontate.',
+    '- Non nominare persone: se un dato indica «un volontario» o «[nome]», scrivi in modo impersonale.',
+    '- Non superare le 600 parole.',
     'Rispondi SOLO con un oggetto JSON {"relazione":""}, senza altro testo.'
   ].join('\n');
   return [{ role: 'system', content: sist }, { role: 'user', content: `Evento: ${dati.tipo || 'non indicato'}\n\nDati dell'evento:\n${fatti}` }];
@@ -232,7 +235,7 @@ export async function esegui(id, deps = {}) {
     const bozza = dati.modo === 'bozza', verbale = bozza || dati.modo === 'verbale';
     const campi = {}, mappe = {}, lista = bozza ? ['relazione'] : verbale ? CAMPI_VERBALE : CAMPI;
     lista.forEach(c => {
-      const t = String(dati[c] || '').trim().slice(0, bozza ? 9000 : verbale ? 6000 : 2000);
+      const t = String(dati[c] || '').trim().slice(0, bozza ? 14000 : verbale ? 6000 : 2000);
       if (!t) return;
       const p = proteggi(t); campi[c] = p.testo; mappe[c] = p.mappa;
     });
