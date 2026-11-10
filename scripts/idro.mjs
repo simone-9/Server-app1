@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inviaPush, chiaveServizio, leggiCollezione, scriviDocumento, leggiConfigGruppo } from './push.mjs';
-import { integraDaRest, idstazDi } from './arpav-rest.mjs';
+import { integraDaRest, integraPioggiaRest, idstazDi } from './arpav-rest.mjs';
 
 const SORGENTE = process.env.IDRO_SOURCE_URL || 'https://www.arpa.veneto.it/api/risorse/data-meteo/xml/Ultime48ore.xml';
 const FILE_PROVA = process.env.IDRO_SOURCE_FILE || '';
@@ -127,7 +127,7 @@ function leggi(xml) {
   const pl = {};
   for (const s of cfg.pluviometri || []) {
     const l = sensore(xml, s.id);
-    if (l) pl[s.id] = { nome: s.nome, dati: l.dati };
+    if (l) { pl[s.id] = { nome: s.nome, dati: l.dati }; const ids = idstazDi(xml, s.id); if (ids) pl[s.id].ids = ids; }
   }
   return { run, st, pl };
 }
@@ -337,6 +337,16 @@ if (!FILE_PROVA || process.env.ARPAV_REST_URL) {
     const r = await integraDaRest(dati.st);
     if (r.misure) console.log(`ARPAV: ${r.misure} misure più recenti dal servizio dei grafici (${r.stazioni} stazioni)`);
     const allerta = cfg.stazioni.filter(x => x.allerta).map(x => dati.st[x.id]).filter(Boolean);
+    // pioggia: completa i pluviometri del file e aggiunge le stazioni meteo vicine (non presenti nel file XML), prima nell'elenco
+    try {
+      const extra = BRENTA ? (cfg.pluviometriRest || []) : [];
+      const prima = {}; for (const e of extra) prima['rest-' + e.cs] = (dati.pl && dati.pl['rest-' + e.cs]) || null;   // se il servizio non risponde resta l'ultimo dato letto
+      const pl = Object.assign(prima, Object.fromEntries(Object.entries(dati.pl || {}).filter(([k]) => !k.startsWith('rest-'))));
+      const rp = await integraPioggiaRest(pl, extra);
+      for (const k of Object.keys(pl)) if (pl[k] == null) delete pl[k];
+      dati.pl = pl;
+      if (rp.misure) console.log(`ARPAV: pioggia dal servizio dei grafici (${rp.stazioni} pluviometri, ${rp.misure} misure)`);
+    } catch (e) { console.log('::notice::Pioggia dal servizio dei grafici ARPAV: ' + (e && e.message ? e.message : e)); }
     restFresco = r.lette > 0 && allerta.length > 0 && allerta.every(d => d.dati.length && Date.now() - d.dati[d.dati.length - 1][0] <= 60 * 60000);
   } catch (e) { console.log('::notice::Servizio dei grafici ARPAV: ' + (e && e.message ? e.message : e)); }
 }

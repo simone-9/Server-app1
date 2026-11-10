@@ -186,5 +186,20 @@
         "pioggia": []
       }
     }
-  }
+  },
+  "_nota_pluviometriRest": "Stazioni meteo ARPAV con pluviometro che non sono nel file XML Ultime48ore: si leggono dal servizio dei grafici del sito (cs = codseqst della pagina ARPAV della stazione) e compaiono per prime tra i pluviometri.",
+  "pluviometriRest": [
+    {
+      "cs": 300000267,
+      "nome": "Campodarsego (stazione meteo)"
+    },
+    {
+      "cs": 300000047,
+      "nome": "Castelfranco Veneto (stazione meteo)"
+    },
+    {
+      "cs": 300002360,
+      "nome": "Vicenza Sant'Agostino (stazione meteo)"
+    }
+  ]
 }

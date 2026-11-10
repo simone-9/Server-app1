@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-const { tempoRest, idstazDi, unisci, serieDa, integraDaRest } = await import('../scripts/arpav-rest.mjs');
+const { tempoRest, idstazDi, unisci, serieDa, integraDaRest, cumulataDa, integraPioggiaRest, _azzeraCache } = await import('../scripts/arpav-rest.mjs');
 // ora solare (UTC+1)
 assert.equal(new Date(tempoRest('2026-11-10T15:20:00')).toISOString(), '2026-11-10T14:20:00.000Z');
 assert.ok(isNaN(tempoRest('boh')));
@@ -33,9 +33,27 @@ assert.deepEqual(r, { stazioni: 2, misure: 3, errori: 0, lette: 2 });
 assert.equal(new Date(st['300005777'].dati.at(-1)[0]).toISOString(), '2026-11-10T14:20:00.000Z'); assert.equal(st['300005777'].dati.length, 2);
 assert.equal(st['300005751'].q.length, 2); assert.equal(st['300011337'].dati.length, 1);
 // servizio giù: nessun errore, dati invariati
+_azzeraCache();
 const st2 = { a: { nome: 'A', ids: 302, dati: [[1, 1]] } };
 const r2 = await integraDaRest(st2, { fetch: async () => { throw new Error('rete'); }, log: () => {} });
 assert.equal(r2.errori, 1); assert.deepEqual(st2.a.dati, [[1, 1]]);
 const r3 = await integraDaRest(st2, { fetch: async () => ({ ok: true, json: async () => ({ success: false }) }), log: () => {} });
 assert.equal(r3.errori, 1);
+// pioggia: da 5 minuti a cumulata dalla mezzanotte solare ogni 10 minuti
+const P = (d, v) => ({ tipo: 'PREC', nome_sensore: 'Precipitazione', dataora: d, valore: String(v) });
+const c = cumulataDa([P('2026-11-09T23:55:00', 1), P('2026-11-10T00:00:00', 0.4), P('2026-11-10T00:05:00', 0.2), P('2026-11-10T00:10:00', 0.2), P('2026-11-10T15:55:00', 1), P('2026-11-10T16:00:00', 0.5)]);
+assert.deepEqual(c.map(([t, v]) => [new Date(t).toISOString().slice(11, 16), v]), [['23:00', 1.4], ['23:10', 0.4], ['15:00', 1.9]]);
+_azzeraCache();
+const rispP = { meteo_idroOggi: { success: true, data: [{ codice_stazione: 321, codseqst: 300001774 }] },
+  '300001774': { success: true, data: [P('2026-11-10T11:20:00', 0.0), P('2026-11-10T15:40:00', 0.2)] },
+  '300000267': { success: true, data: [P('2026-11-10T08:00:00', 3), P('2026-11-10T16:00:00', 2.4)] } };
+const fP = async (url) => { const k = url.includes('meteo_idroOggi') ? 'meteo_idroOggi' : (url.match(/codseqst=(\d+)/) || [])[1]; const j = rispP[k]; return j ? { ok: true, json: async () => j } : { ok: false, status: 404, json: async () => ({}) }; };
+const pl = { 'rest-300000267': null, '300005808': { nome: 'Vicenza S. Agostino', ids: 321, dati: [[Date.parse('2026-11-10T10:00:00Z'), 1.2]] } };
+const rp = await integraPioggiaRest(pl, [{ cs: 300000267, nome: 'Campodarsego' }], { fetch: fP, log: () => {} });
+assert.equal(rp.lette, 2); assert.equal(pl['rest-300000267'].nome, 'Campodarsego'); assert.equal(pl['rest-300000267'].dati.at(-1)[1], 5.4);
+assert.equal(pl['300005808'].dati.length, 3); assert.ok('rest-300000267' in pl);
+// servizio giù: la stazione meteo resta com'era
+_azzeraCache(); const vecchio = { nome: 'Campodarsego', dati: [[1, 2]] }; const pl2 = { 'rest-300000267': vecchio };
+await integraPioggiaRest(pl2, [{ cs: 300000267, nome: 'Campodarsego' }], { fetch: async () => { throw new Error('rete'); }, log: () => {} });
+assert.equal(pl2['rest-300000267'], vecchio);
 console.log('TUTTI I TEST OK');

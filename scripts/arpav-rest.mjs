@@ -43,16 +43,59 @@ async function json(url, f, ms) {
   return j.data;
 }
 
+// pioggia del servizio (mm ogni 5 minuti) -> pioggia cumulata dalla mezzanotte solare ogni 10 minuti, come i pluviometri del file XML
+export function cumulataDa(righe) {
+  const p = serieDa(righe, 'PREC').filter(([, v]) => v >= 0).sort((a, b) => a[0] - b[0]);
+  const B = 600000, GIORNO = 86400000, out = [];
+  let giorno = null, cum = 0;
+  for (const [t, v] of p) {
+    const g = Math.floor((t + ORA - 1) / GIORNO);   // la misura delle 00:00 chiude il giorno prima
+    if (g !== giorno) { giorno = g; cum = 0; }
+    cum = Math.round((cum + v) * 100) / 100;
+    const k = Math.ceil(t / B) * B, u = out[out.length - 1];
+    if (u && u[0] === k) u[1] = cum; else out.push([k, cum]);
+  }
+  return out;
+}
+let codiciCache = null;
+async function codici(f, ms) {
+  if (codiciCache) return codiciCache;
+  const elenco = await json(REST + '/meteo_idroOggi', f, ms);
+  const cod = new Map(); for (const r of elenco) if (r && r.codice_stazione != null && r.codseqst && !cod.has(Number(r.codice_stazione))) cod.set(Number(r.codice_stazione), r.codseqst);
+  return (codiciCache = cod);
+}
+export function _azzeraCache() { codiciCache = null; }
+// pl = pluviometri del file idro.json ({ nome, ids, dati cumulati }); extra = stazioni meteo da aggiungere [{ cs, nome }]
+export async function integraPioggiaRest(pl, extra, opz = {}) {
+  const f = opz.fetch || fetch, log = opz.log || console.log, ms = opz.timeout || 20000;
+  const out = { stazioni: 0, misure: 0, errori: 0, lette: 0 };
+  const lista = [];
+  const con = Object.entries(pl || {}).filter(([, x]) => x && x.ids);
+  if (con.length) {
+    try { const cod = await codici(f, ms); for (const [id, x] of con) { const cs = cod.get(Number(x.ids)); if (cs) lista.push({ id, cs, x }); } }
+    catch (e) { out.errori++; log('::notice::Servizio dei grafici ARPAV non letto per i pluviometri: ' + (e && e.message ? e.message : e)); }
+  }
+  for (const e of extra || []) if (e && e.cs) lista.push({ id: 'rest-' + e.cs, cs: e.cs, x: null, nome: e.nome });
+  for (const { id, cs, x, nome } of lista) {
+    try {
+      const righe = await json(`${REST}/meteo_meteogrammi_tabella?codseqst=${encodeURIComponent(cs)}`, f, ms); out.lette++;
+      const c = cumulataDa(righe);
+      if (x) { const a = unisci(x.dati, c); x.dati = a.serie; if (a.aggiunti) { out.stazioni++; out.misure += a.aggiunti; log(`ARPAV (grafici del sito): pioggia ${x.nome || id} +${a.aggiunti}`); } }
+      else if (c.length) { pl[id] = { nome: nome || String(cs), dati: unisci([], c).serie, fonte: 'rest' }; out.stazioni++; out.misure += c.length; log(`ARPAV (grafici del sito): pioggia ${nome || cs}, ultimo ${new Date(c[c.length - 1][0]).toISOString().slice(11, 16)} UTC, ${c[c.length - 1][1]} mm da mezzanotte`); }
+    } catch (e) { out.errori++; log(`::notice::Pioggia ${nome || (x && x.nome) || id}: servizio dei grafici ARPAV non letto (${e && e.message ? e.message : e})`); }
+  }
+  return out;
+}
+
 // st = stazioni del file idro.json ({ nome, ids, dati, q }); le modifica sul posto. Ritorna un riepilogo.
 export async function integraDaRest(st, opz = {}) {
   const f = opz.fetch || fetch, log = opz.log || console.log, ms = opz.timeout || 20000;
   const out = { stazioni: 0, misure: 0, errori: 0, lette: 0 };
   const con = Object.entries(st || {}).filter(([, s]) => s && s.ids);
   if (!con.length) return out;
-  let elenco;
-  try { elenco = await json(REST + '/meteo_idroOggi', f, ms); }
+  let cod;
+  try { cod = await codici(f, ms); }
   catch (e) { log('::notice::Servizio dei grafici ARPAV non letto (si usa solo il file XML): ' + (e && e.message ? e.message : e)); out.errori++; return out; }
-  const cod = new Map(); for (const r of elenco) if (r && r.codice_stazione != null && r.codseqst && !cod.has(Number(r.codice_stazione))) cod.set(Number(r.codice_stazione), r.codseqst);
   for (const [id, s] of con) {
     const cs = cod.get(Number(s.ids)); if (!cs) continue;
     try {
