@@ -22,7 +22,9 @@ const TIPI = {
   'video/quicktime': { ext: 'mov', max: 50 * 1024 * 1024 }
 };
 const AMBITI = ['interventi', 'segnalazioni', 'richieste', 'rapporti', 'materiali'];
-const RUOLI_OK = ['Admin', 'Operatore SOC', 'Caposquadra', 'Operatore'];
+const RUOLI_OK = ['Admin', 'Operatore SOC', 'Caposquadra', 'Operatore', 'Ente'];
+// 'Ente': caposquadra di un ente accreditato entrato con il link temporaneo dell'app. Può solo caricare foto dal campo (ambito richieste)
+// e leggere o eliminare i file che ha caricato lui; l'accesso vale finché non scade il campo «scade» del suo documento in «ruoli».
 const RE_CHIAVE = /^[a-z]+\/\d{4}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|webm|mov)$/;
 
 function lista(v, def) { const s = String(v || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean); return s.length ? s : def; }
@@ -54,7 +56,11 @@ async function ruoloDi(email, token, env) {
   const u = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/ruoli/${encodeURIComponent(email)}`;
   const r = await fetch(u, { headers: { Authorization: 'Bearer ' + token } });
   let ruolo = '';
-  if (r.ok) { const d = await r.json(); ruolo = (d.fields && d.fields.role && d.fields.role.stringValue) || ''; }
+  if (r.ok) {
+    const d = await r.json(), f = d.fields || {};
+    ruolo = (f.role && f.role.stringValue) || '';
+    if (ruolo === 'Ente' && !(Number((f.scade && (f.scade.integerValue || f.scade.doubleValue)) || 0) > Date.now())) ruolo = '';   // link scaduto
+  }
   cacheRuoli.set(email, { r: ruolo, t: Date.now() + 60000 });
   return ruolo;
 }
@@ -77,6 +83,7 @@ export default {
       const tipo = (req.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase(), t = TIPI[tipo];
       if (!t) return json({ errore: 'tipo di file non consentito' }, 415, h);
       const ambito = AMBITI.includes(url.searchParams.get('ambito')) ? url.searchParams.get('ambito') : 'interventi';
+      if (ruolo === 'Ente' && ambito !== 'richieste') return json({ errore: 'ruolo non autorizzato' }, 403, h);
       const dichiarata = Number(req.headers.get('Content-Length') || 0);
       if (dichiarata > t.max) return json({ errore: 'file troppo grande', max: t.max }, 413, h);
       const dati = await req.arrayBuffer();
@@ -90,6 +97,7 @@ export default {
       const k = decodeURIComponent(url.pathname.slice(7));
       if (!RE_CHIAVE.test(k)) return json({ errore: 'chiave non valida' }, 400, h);
       if (req.method === 'GET') {
+        if (ruolo === 'Ente') { const m = await env.MEDIA.head(k); if (!m || !m.customMetadata || m.customMetadata.caricato_da !== utente.email) return json({ errore: 'non trovato' }, 404, h); }
         const o = await env.MEDIA.get(k); if (!o) return json({ errore: 'non trovato' }, 404, h);
         return risp(o.body, 200, { ...h, 'Content-Type': (o.httpMetadata && o.httpMetadata.contentType) || 'application/octet-stream', 'Content-Length': String(o.size), 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       }
