@@ -1,5 +1,5 @@
 {
- "aggiornato": "2026-11-10T15:31:30.663Z",
+ "aggiornato": "2026-11-10T21:01:37.645Z",
  "note": "Orari in UTC. Dati ARPAV Veneto (CC BY 4.0), automatici e non validati. La pioggia è la cumulata giornaliera dalla mezzanotte solare.",
  "stazioni": {
   "300005751": "Brenta a Barzizza (Bassano del Grappa)",
@@ -18,6 +18,9 @@
  "pluviometri": {
   "300005763": "Castelfranco Veneto (Muson dei Sassi)",
   "300005808": "Vicenza S. Agostino (Retrone)",
-  "300016778": "Padova Voltabarozzo (Bacchiglione)"
+  "300016778": "Padova Voltabarozzo (Bacchiglione)",
+  "rest-300000267": "Campodarsego (stazione meteo)",
+  "rest-300000047": "Castelfranco Veneto (stazione meteo)",
+  "rest-300002360": "Vicenza Sant'Agostino (stazione meteo)"
  }
 }
