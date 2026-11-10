@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inviaPush, chiaveServizio, leggiCollezione, scriviDocumento, leggiConfigGruppo } from './push.mjs';
+import { integraDaRest, idstazDi } from './arpav-rest.mjs';
 
 const SORGENTE = process.env.IDRO_SOURCE_URL || 'https://www.arpa.veneto.it/api/risorse/data-meteo/xml/Ultime48ore.xml';
 const FILE_PROVA = process.env.IDRO_SOURCE_FILE || '';
@@ -120,6 +121,7 @@ function leggi(xml) {
     if (!l) continue;
     const q = s.portata ? sensore(xml, s.portata) : null;
     st[s.id] = { nome: s.nome, g: l.g, dati: l.dati, q: q ? q.dati : [], qu: q ? (q.unita || 'm³/s').replace('m3', 'm³') : '' };
+    const ids = idstazDi(xml, s.id); if (ids) st[s.id].ids = ids;   // codice della stazione: serve per il servizio dei grafici ARPAV
   }
   // pluviometri: pioggia cumulata (mm) dalla mezzanotte solare, ogni 30 minuti
   const pl = {};
@@ -328,6 +330,17 @@ try { xml = await scarica(); } catch (e) {
   if (!dati) { console.log('::warning::Nessun dato ARPAV precedente da riusare.'); process.exit(0); }
 }
 if (arpavOk) dati = leggi(xml);
+// misure più recenti dal servizio dei grafici del sito ARPAV (il file XML a volte resta indietro di una o due ore)
+let restFresco = false;
+if (!FILE_PROVA || process.env.ARPAV_REST_URL) {
+  try {
+    const r = await integraDaRest(dati.st);
+    if (r.misure) console.log(`ARPAV: ${r.misure} misure più recenti dal servizio dei grafici (${r.stazioni} stazioni)`);
+    const allerta = cfg.stazioni.filter(x => x.allerta).map(x => dati.st[x.id]).filter(Boolean);
+    restFresco = r.lette > 0 && allerta.length > 0 && allerta.every(d => d.dati.length && Date.now() - d.dati[d.dati.length - 1][0] <= 60 * 60000);
+  } catch (e) { console.log('::notice::Servizio dei grafici ARPAV: ' + (e && e.message ? e.message : e)); }
+}
+if (!arpavOk && restFresco) { console.log('File XML ARPAV non raggiungibile, ma i livelli recenti arrivano dal servizio dei grafici: avvisi attivi.'); arpavOk = true; }
 mkdirSync(OUT, { recursive: true });
 const fileStato = `${OUT}/state.json`;
 const stato = existsSync(fileStato) ? JSON.parse(readFileSync(fileStato, 'utf8')) : {};
