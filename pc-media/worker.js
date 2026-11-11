@@ -1,4 +1,4 @@
-// Worker "pc-media" — archivio foto e video degli interventi (Cloudflare R2, giurisdizione UE)
+// Worker "pc-media" — archivio foto e video degli interventi e libretti dei mezzi (Cloudflare R2, giurisdizione UE)
 // Binding richiesto:   MEDIA  -> bucket R2 "pc-curtarolo-media"
 // Variabile richiesta: FIREBASE_PROJECT_ID  (es. gestione-cantieri-temporanei)
 // Variabili facoltative:
@@ -7,6 +7,7 @@
 //
 // Percorsi:
 //   POST   /media?ambito=interventi   corpo = file (foto <= 3 MB, video <= 50 MB)  -> { k, tipo, size }
+//   POST   /media?ambito=veicoli      libretto di circolazione del mezzo: foto oppure PDF <= 10 MB (il PDF è ammesso solo in questo ambito)
 //   GET    /media/<chiave>            restituisce il file (solo utenti con un ruolo)
 //   DELETE /media/<chiave>            solo Admin, Operatore SOC o chi l'ha caricato
 //   GET    /uso                       solo Admin: spazio occupato nel bucket
@@ -19,13 +20,14 @@ const TIPI = {
   'image/webp': { ext: 'webp', max: 3 * 1024 * 1024 },
   'video/mp4': { ext: 'mp4', max: 50 * 1024 * 1024 },
   'video/webm': { ext: 'webm', max: 50 * 1024 * 1024 },
-  'video/quicktime': { ext: 'mov', max: 50 * 1024 * 1024 }
+  'video/quicktime': { ext: 'mov', max: 50 * 1024 * 1024 },
+  'application/pdf': { ext: 'pdf', max: 10 * 1024 * 1024, ambiti: ['veicoli'] }   // scansione del libretto di circolazione
 };
-const AMBITI = ['interventi', 'segnalazioni', 'richieste', 'rapporti', 'materiali'];
+const AMBITI = ['interventi', 'segnalazioni', 'richieste', 'rapporti', 'materiali', 'veicoli'];
 const RUOLI_OK = ['Admin', 'Operatore SOC', 'Caposquadra', 'Operatore', 'Ente'];
 // 'Ente': caposquadra di un ente accreditato entrato con il link temporaneo dell'app. Può solo caricare foto dal campo (ambito richieste)
 // e leggere o eliminare i file che ha caricato lui; l'accesso vale finché non scade il campo «scade» del suo documento in «ruoli».
-const RE_CHIAVE = /^[a-z]+\/\d{4}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|webm|mov)$/;
+const RE_CHIAVE = /^[a-z]+\/\d{4}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|webm|mov|pdf)$/;
 
 function lista(v, def) { const s = String(v || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean); return s.length ? s : def; }
 function cors(req, env) {
@@ -84,10 +86,12 @@ export default {
       if (!t) return json({ errore: 'tipo di file non consentito' }, 415, h);
       const ambito = AMBITI.includes(url.searchParams.get('ambito')) ? url.searchParams.get('ambito') : 'interventi';
       if (ruolo === 'Ente' && ambito !== 'richieste') return json({ errore: 'ruolo non autorizzato' }, 403, h);
+      if (t.ambiti && !t.ambiti.includes(ambito)) return json({ errore: 'tipo di file non consentito' }, 415, h);
       const dichiarata = Number(req.headers.get('Content-Length') || 0);
       if (dichiarata > t.max) return json({ errore: 'file troppo grande', max: t.max }, 413, h);
       const dati = await req.arrayBuffer();
       if (!dati.byteLength || dati.byteLength > t.max) return json({ errore: 'file troppo grande', max: t.max }, 413, h);
+      if (t.ext === 'pdf' && new TextDecoder('latin1').decode(dati.slice(0, 5)) !== '%PDF-') return json({ errore: 'il file non è un PDF valido' }, 415, h);
       const k = `${ambito}/${new Date().getUTCFullYear()}/${crypto.randomUUID()}.${t.ext}`;
       await env.MEDIA.put(k, dati, { httpMetadata: { contentType: tipo }, customMetadata: { caricato_da: utente.email, ambito } });
       return json({ k, tipo, size: dati.byteLength }, 201, h);
