@@ -96,7 +96,7 @@ export async function inviaPush(msg, opzioni = {}) {
   for (const d of dispositivi) {
     const r = await f(`https://fcm.googleapis.com/v1/projects/${k.project_id}/messages:send`, {
       method: 'POST', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' },
-      body: JSON.stringify({ message: { token: d.token, data: Object.assign({ titolo: String(msg.titolo), testo: String(msg.testo), tag: String(msg.tag || 'idro'), icona: String(msg.icona || ''), url: './' }, comeAllarme(msg, d) ? { tipo: 'allarme', avvisoId: String(msg.avvisoId || '') } : {}), webpush: { headers: { Urgency: 'high', TTL: '3600' } }, android: { priority: 'HIGH', ttl: comeAllarme(msg, d) ? '600s' : '3600s' } } })
+      body: JSON.stringify({ message: { token: d.token, data: Object.assign({ titolo: String(msg.titolo), testo: String(msg.testo), tag: String(msg.tag || 'idro'), icona: String(msg.icona || ''), url: String(msg.url || './') }, comeAllarme(msg, d) ? { tipo: 'allarme', avvisoId: String(msg.avvisoId || '') } : {}), webpush: { headers: { Urgency: 'high', TTL: '3600' } }, android: { priority: 'HIGH', ttl: comeAllarme(msg, d) ? '600s' : '3600s' } } })
     });
     if (r.ok) { inviati++; continue; }
     const t = await r.text().catch(() => '');
