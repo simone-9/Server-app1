@@ -167,6 +167,17 @@ export async function scriviDocumento(coll, id, oggetto, opzioni = {}) {
   return true;
 }
 
+// Aggiorna solo i campi indicati di un documento (lo crea se non c'e'): non tocca gli altri campi, quindi non cancella cio' che la sala ha modificato nel frattempo.
+export async function aggiornaCampi(coll, id, oggetto, opzioni = {}) {
+  const f = opzioni.fetch || fetch, k = chiaveServizio(opzioni.env || process.env);
+  if (!k) return false;
+  const tok = await accessToken(k, f), campi = Object.keys(oggetto).filter(c => oggetto[c] !== undefined);
+  const maschera = campi.map(c => 'updateMask.fieldPaths=' + encodeURIComponent(c)).join('&');
+  const r = await f(`https://firestore.googleapis.com/v1/projects/${k.project_id}/databases/(default)/documents/${PREFISSO}${coll}/${encodeURIComponent(id)}?${maschera}`, { method: 'PATCH', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: JSON.stringify({ fields: aFs(Object.fromEntries(campi.map(c => [c, oggetto[c]]))).mapValue.fields }) });
+  if (!r.ok) throw new Error(`Aggiornamento di ${coll}/${id} non riuscito (${r.status}): ` + (await r.text().catch(() => '')).slice(0, 200));
+  return true;
+}
+
 // Impostazioni del gruppo scritte dall'app (Firestore: gruppi/<codice>/impostazioni/gruppo): comune, zona CFD, fiume, Telegram sì/no...
 // Ritorna l'oggetto, oppure null se non ci sono (o non si leggono): in quel caso gli script usano le variabili del repository.
 // GRUPPO_CONFIG_FILE (solo prove): legge le impostazioni da un file JSON invece che da Firestore.
