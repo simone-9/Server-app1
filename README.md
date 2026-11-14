@@ -1,4 +1,4 @@
-# Server app · servizi automatici di Gestione Emergenze 2
+# Server app · servizi automatici di Gestione Emergenze 
 
 Servizi che girano su GitHub Actions e parlano con il progetto Firebase `server-gestione-emergenze` (versione per più gruppi).
 Ogni gruppo ha i suoi dati sotto `gruppi/<codice>/…`: tutti gli script leggono la variabile **`GRUPPO_ID`** e, se è impostata, usano quel percorso. Senza `GRUPPO_ID` usano i percorsi storici (senza gruppo).
