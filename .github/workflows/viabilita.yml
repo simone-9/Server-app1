@@ -1,0 +1,45 @@
+name: Viabilita' - fonti esterne e feed Waze
+
+on:
+  schedule:
+    - cron: '7-59/10 * * * *'   # ogni 10 minuti (GitHub puo' ritardare un po' le esecuzioni programmate)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # serve solo per pubblicare il feed sul ramo «waze-feed»
+
+concurrency:
+  group: viabilita
+  cancel-in-progress: false
+
+jobs:
+  viabilita:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Legge TomTom e Waze e propone le segnalazioni alla sala
+        run: node scripts/viabilita-fonti.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TOMTOM_API_KEY: ${{ secrets.TOMTOM_API_KEY }}
+          WAZE_FEED_URL: ${{ secrets.WAZE_FEED_URL }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+      - name: Costruisce il feed delle chiusure per Waze
+        run: node scripts/viabilita-waze-feed.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+      - name: Pubblica il feed sul ramo waze-feed (solo se cambiato)
+        run: |
+          [ -f waze-feed/cifs.json ] || exit 0
+          git fetch --depth=1 origin waze-feed 2>/dev/null && git show FETCH_HEAD:cifs.json > /tmp/precedente.json 2>/dev/null || echo '' > /tmp/precedente.json
+          if cmp -s /tmp/precedente.json waze-feed/cifs.json; then echo "Feed invariato."; exit 0; fi
+          dir=$(mktemp -d); cp waze-feed/cifs.json "$dir/cifs.json"; cd "$dir"
+          git init -q -b waze-feed; git config user.name "github-actions"; git config user.email "github-actions@users.noreply.github.com"
+          git add cifs.json; git commit -qm "Feed Waze (CIFS)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" waze-feed
+          echo "Feed pubblicato: https://raw.githubusercontent.com/${{ github.repository }}/waze-feed/cifs.json"
