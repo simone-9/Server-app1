@@ -22,11 +22,20 @@ assert.deepEqual(r.eventi.map(e => e.id + ':' + e.tipo), ['n1:notizie']); assert
 r = daNotificare([R('n1', { squadra: 'Alfa', stato: 'In corso', notizieChieste: m(2) })], r.stato, ora); assert.equal(r.eventi.length, 0, 'domanda gia notificata');
 r = daNotificare([R('n1', { squadra: 'Alfa', stato: 'In corso', notizieChieste: m(1) })], r.stato, ora); assert.equal(r.eventi.length, 1, 'nuova domanda = nuova notifica');
 r = daNotificare([R('n1', { squadra: 'Alfa', stato: 'In corso', notizieChieste: m(2) })], { urgenti: [], assegnate: [], rapporti: [] }, ora); assert.equal(r.eventi.length, 1, 'stato vecchio senza notizie');
+// problema segnalato dalla squadra: una notifica per segnalazione, solo se aperto, recente e la richiesta e' aperta
+const vP = () => ({ urgenti: [], assegnate: [], rapporti: [], notizie: [], problemi: [] });
+r = daNotificare([R('p1', { squadra: 'Alfa', stato: 'In corso', problemaAperto: true, problemaIl: m(2), problemaMotivo: 'Accesso impedito', problemaSquadra: 'Alfa' }), R('p2', { squadra: 'Alfa', stato: 'In corso', problemaAperto: false, problemaIl: m(2) }), R('p3', { squadra: 'Alfa', stato: 'In corso', problemaAperto: true, problemaIl: m(400) }), R('p4', { squadra: 'Alfa', stato: 'Completato', problemaAperto: true, problemaIl: m(2) })], vP(), ora);
+assert.deepEqual(r.eventi.map(e => e.id + ':' + e.tipo), ['p1:problema']); assert.deepEqual(r.stato.problemi, ['p1|' + m(2)]);
+r = daNotificare([R('p1', { squadra: 'Alfa', stato: 'In corso', problemaAperto: true, problemaIl: m(2) })], r.stato, ora); assert.equal(r.eventi.length, 0, 'problema gia notificato');
+r = daNotificare([R('p1', { squadra: 'Alfa', stato: 'In corso', problemaAperto: true, problemaIl: m(1) })], r.stato, ora); assert.equal(r.eventi.length, 1, 'nuova segnalazione = nuova notifica');
+r = daNotificare([R('p1', { squadra: 'Alfa', stato: 'In corso', problemaAperto: true, problemaIl: m(2) })], { urgenti: [], assegnate: [], rapporti: [] }, ora); assert.equal(r.eventi.length, 1, 'stato vecchio senza problemi');
+const mpr = messaggio({ tipo: 'problema', id: 'p1', c: { id: 'REQ-9', tipo: 'Allagamento', indirizzo: 'Via Po 3', problemaMotivo: 'Pericolo sul posto', problemaNota: 'cavo a terra', problemaSquadra: 'Alfa' } }); assert.match(mpr.titolo, /PROBLEMA · Richiesta REQ-9 · Squadra Alfa/); assert.match(mpr.testo, /Pericolo sul posto: cavo a terra/); assert.equal(mpr.urgente, true); assert.match(mpr.tag, /^richiesta-prob-/);
 const mn = messaggio({ tipo: 'notizie', id: 'n1', c: { squadra: 'Alfa', tipo: 'Frana', indirizzo: 'Via A' } }); assert.match(mn.titolo, /chiede notizie · Squadra Alfa/); assert.equal(mn.urgente, true); assert.match(mn.tag, /^richiesta-not-/);
 // destinatari
 const ruoli = [{ id: 'admin@x.it', campi: { role: 'Admin' } }, { id: 'soc@x.it', campi: { role: 'Operatore SOC' } }, { id: 'op@x.it', campi: { role: 'Operatore' } }, { id: 'cs@x.it', campi: { role: 'Caposquadra', volId: 'v1' } }, { id: 'v2@x.it', campi: { role: 'Operatore', volId: 'v2' } }, { id: 'v3@x.it', campi: { role: 'Operatore', volId: 'v3' } }];
 const squadre = [{ id: 's1', campi: { nome: 'Alfa', membri: [{ volId: 'v1', capo: true }, { volId: 'v2' }] } }, { id: 's2', campi: { nome: 'Beta', membri: [{ volId: 'v3' }] } }];
 assert.deepEqual(destinatari({ tipo: 'urgente', c: {} }, ruoli, squadre).sort(), ['admin@x.it', 'cs@x.it', 'soc@x.it']);
+assert.deepEqual(destinatari({ tipo: 'problema', c: {} }, ruoli, squadre).sort(), ['admin@x.it', 'soc@x.it'], 'problema: solo Admin e SOC');
 assert.deepEqual(destinatari({ tipo: 'assegnata', c: { squadra: 'Alfa' } }, ruoli, squadre).sort(), ['cs@x.it', 'v2@x.it']);
 assert.deepEqual(destinatari({ tipo: 'assegnata', c: { squadra: 'x', squadraId: 's2' } }, ruoli, squadre), ['v3@x.it']);
 assert.deepEqual(destinatari({ tipo: 'rapporto', c: { squadra: 'Alfa' } }, ruoli, squadre), ['cs@x.it']);
@@ -42,7 +51,7 @@ const env = { FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'sa@p.iam
 const S = v => ({ stringValue: v }), B = v => ({ booleanValue: v });
 const fsDoc = (id, o) => ({ name: 'projects/proj/databases/(default)/documents/x/' + id, fields: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? S(v) : typeof v === 'boolean' ? B(v) : v])) });
 const arr = (l) => ({ arrayValue: { values: l.map(x => ({ mapValue: { fields: Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === 'boolean' ? B(v) : S(v)])) } })) } });
-const reqs = { creataIl: [fsDoc('u1', { id: 'REQ-1', tipo: 'Frana', indirizzo: 'Via A', priorita: '1 - Alta', stato: 'Nuova', squadra: '', creataIl: m(5) })], assegnataIl: [fsDoc('u2', { id: 'REQ-2', tipo: 'Albero', indirizzo: 'Via B', priorita: '2 - Media', stato: 'Presa in carico', squadra: 'Alfa', creataIl: m(60), assegnataIl: m(1) })], chiusura: [fsDoc('u3', { id: 'REQ-3', tipo: 'Sabbia', indirizzo: 'Via C', priorita: '3 - Bassa', stato: 'Completato', squadra: 'Alfa', creataIl: m(300), chiusura: m(20) })] , notizieChieste: [fsDoc('u4', { id: 'REQ-4', tipo: 'Allagamento', indirizzo: 'Via D', priorita: '2 - Media', stato: 'In corso', squadra: 'Alfa', creataIl: m(60), notizieChieste: m(3) })] };
+const reqs = { creataIl: [fsDoc('u1', { id: 'REQ-1', tipo: 'Frana', indirizzo: 'Via A', priorita: '1 - Alta', stato: 'Nuova', squadra: '', creataIl: m(5) })], assegnataIl: [fsDoc('u2', { id: 'REQ-2', tipo: 'Albero', indirizzo: 'Via B', priorita: '2 - Media', stato: 'Presa in carico', squadra: 'Alfa', creataIl: m(60), assegnataIl: m(1) })], chiusura: [fsDoc('u3', { id: 'REQ-3', tipo: 'Sabbia', indirizzo: 'Via C', priorita: '3 - Bassa', stato: 'Completato', squadra: 'Alfa', creataIl: m(300), chiusura: m(20) })] , problemaIl: [fsDoc('u5', { id: 'REQ-5', tipo: 'Allagamento', indirizzo: 'Via E', priorita: '2 - Media', stato: 'In corso', squadra: 'Alfa', creataIl: m(60), problemaAperto: true, problemaMotivo: 'Accesso impedito', problemaNota: 'cancello chiuso', problemaSquadra: 'Alfa', problemaIl: m(1) })], notizieChieste: [fsDoc('u4', { id: 'REQ-4', tipo: 'Allagamento', indirizzo: 'Via D', priorita: '2 - Media', stato: 'In corso', squadra: 'Alfa', creataIl: m(60), notizieChieste: m(3) })] };
 const sent = [], scritti = []; let stato = null;
 const fetchF = async (url, init = {}) => {
   const ok = (j) => ({ ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) });
@@ -65,5 +74,6 @@ assert.deepEqual(mappa['richiesta-urg-u1'].sort(), ['tok-admin@x.it', 'tok-cs@x.
 assert.deepEqual(mappa['richiesta-sq-u2'].sort(), ['tok-cs@x.it', 'tok-v2@x.it']);
 assert.deepEqual(mappa['richiesta-rap-u3'], ['tok-cs@x.it']);
 assert.deepEqual(mappa['richiesta-not-u4'], ['tok-cs@x.it']);
-assert.equal(out.inviate, 4);
+assert.deepEqual(mappa['richiesta-prob-u5'], ['tok-admin@x.it'], 'problema: solo Admin e SOC (qui solo l\'admin ha il ruolo)');
+assert.equal(out.inviate, 5);
 console.log('TUTTI I TEST OK');
