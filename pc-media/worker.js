@@ -24,7 +24,7 @@ const TIPI = {
   'application/pdf': { ext: 'pdf', max: 10 * 1024 * 1024, ambiti: ['veicoli'] }   // scansione del libretto di circolazione
 };
 const AMBITI = ['interventi', 'segnalazioni', 'richieste', 'rapporti', 'materiali', 'veicoli'];
-const RUOLI_OK = ['Admin', 'Operatore SOC', 'Caposquadra', 'Operatore', 'Ente'];
+const RUOLI_OK = ['Admin', 'Coordinatore', 'Operatore SOC', 'Caposquadra', 'Operatore', 'Ente'];
 // 'Ente': caposquadra di un ente accreditato entrato con il link temporaneo dell'app. Può solo caricare foto dal campo (ambito richieste)
 // e leggere o eliminare i file che ha caricato lui; l'accesso vale finché non scade il campo «scade» del suo documento in «ruoli».
 const RE_CHIAVE = /^[a-z]+\/\d{4}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|webm|mov|pdf)$/;
@@ -107,12 +107,12 @@ export default {
       }
       const o = await env.MEDIA.head(k); if (!o) return json({ ok: true, gia_assente: true }, 200, h);
       const proprio = o.customMetadata && o.customMetadata.caricato_da === utente.email;
-      if (!(ruolo === 'Admin' || ruolo === 'Operatore SOC' || proprio)) return json({ errore: 'non puoi eliminare questo file' }, 403, h);
+      if (!(ruolo === 'Admin' || ruolo === 'Coordinatore' || ruolo === 'Operatore SOC' || proprio)) return json({ errore: 'non puoi eliminare questo file' }, 403, h);
       await env.MEDIA.delete(k); return json({ ok: true }, 200, h);
     }
     // ---- spazio occupato (solo Admin) ----
     if (req.method === 'GET' && url.pathname === '/uso') {
-      if (ruolo !== 'Admin') return json({ errore: 'solo amministratori' }, 403, h);
+      if ((ruolo !== 'Admin' && ruolo !== 'Coordinatore')) return json({ errore: 'solo amministratori' }, 403, h);
       let tot = 0, n = 0, cur;
       do { const l = await env.MEDIA.list({ cursor: cur, limit: 1000 }); l.objects.forEach(x => { tot += x.size; n++; }); cur = l.truncated ? l.cursor : undefined; } while (cur);
       return json({ byte: tot, file: n, gb: Math.round(tot / 1e7) / 100, soglia_gratuita_gb: 10 }, 200, h);

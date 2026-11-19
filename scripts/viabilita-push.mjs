@@ -17,7 +17,7 @@ export function daNotificare(segn, ora) {
 export function destinatari(ruoli, permessi, modulo = 'viabilita') {
   const k = 'mod_' + modulo, p = permessi || {};
   return (ruoli || []).filter(r => {
-    const ruolo = String((r.campi || {}).role || '').trim(); if (ruolo === 'Admin') return true;
+    const ruolo = String((r.campi || {}).role || '').trim(); if ((ruolo === 'Admin' || ruolo === 'Coordinatore')) return true;
     const ex = (((p.utenti || {})[String(r.id).toLowerCase()]) || {})[k] || (((p.utenti || {})[r.id]) || {})[k];
     const liv = ex || (((p.ruoli || {})[ruolo]) || {})[k] || (ruolo === 'Operatore SOC' ? 'scrivi' : 'nessuno');
     return liv === 'scrivi';

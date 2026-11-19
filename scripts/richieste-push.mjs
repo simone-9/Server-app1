@@ -49,8 +49,8 @@ export function daNotificare(richieste, stato, ora = Date.now()) {
 // Email dei destinatari. ruoli = [{ id: email, campi: { role, volId } }], squadre = [{ id, campi: { nome, membri: [{ volId, capo }] } }]
 export function destinatari(ev, ruoli, squadre) {
   const email = id => String(id || '').toLowerCase();
-  if (ev.tipo === 'problema') return ruoli.filter(r => ['Admin', 'Operatore SOC'].includes(String((r.campi || {}).role || '').trim())).map(r => email(r.id));
-  if (ev.tipo === 'urgente') return ruoli.filter(r => ['Admin', 'Operatore SOC', 'Caposquadra'].includes(String((r.campi || {}).role || '').trim())).map(r => email(r.id));
+  if (ev.tipo === 'problema') return ruoli.filter(r => ['Admin', 'Coordinatore', 'Operatore SOC'].includes(String((r.campi || {}).role || '').trim())).map(r => email(r.id));
+  if (ev.tipo === 'urgente') return ruoli.filter(r => ['Admin', 'Coordinatore', 'Operatore SOC', 'Caposquadra'].includes(String((r.campi || {}).role || '').trim())).map(r => email(r.id));
   const sq = squadre.find(s => (ev.c.squadraId && s.id === ev.c.squadraId) || ((s.campi || {}).nome && s.campi.nome === ev.c.squadra));
   const membri = ((sq && sq.campi && sq.campi.membri) || []).filter(m => m && m.volId);
   const scelti = (ev.tipo === 'rapporto' || ev.tipo === 'notizie') && membri.some(m => m.capo) ? membri.filter(m => m.capo) : membri;
