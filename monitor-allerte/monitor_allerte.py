@@ -401,7 +401,7 @@ def esegui(archivio, invia=None):
                 continue
             elabora(archivio, d["url"], d["testo"], http_get(d["url"]).content, invia)
             nuovi += 1
-        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti", "erroriConsecutivi": 0, "nonRaggiungibile": False})
+        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti", "erroriConsecutivi": 0, "nonRaggiungibile": False})
         return 0
     except SitoNonRaggiungibile as e:
         # il sito della Regione e' fuori uso: non e' un errore dello script. Si tiene l'ultimo bollettino, si segnala "non aggiornato"
