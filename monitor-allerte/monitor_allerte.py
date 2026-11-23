@@ -155,13 +155,18 @@ class SitoNonRaggiungibile(Exception):
     """Il sito della Regione non risponde o segnala un guasto suo (503...): problema temporaneo, non dello script."""
 
 
+_ULTIMI_TENTATIVI = 0   # tentativi usati dall'ultima http_get (serve al registro delle letture)
+
+
 def http_get(url, tentativi=6):
     """Scarica una pagina. Riprova con pause crescenti se il sito non risponde (connessione rifiutata, timeout, errore 5xx):
     se non risponde mai solleva SitoNonRaggiungibile. Gli altri errori (es. 404) sono errori veri e passano subito."""
     import requests, time
     pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "3,5").split(",")]
     ultimo = ""
+    global _ULTIMI_TENTATIVI
     for i in range(tentativi):
+        _ULTIMI_TENTATIVI = i + 1
         try:
             r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT_CONNESSIONE)
             if r.status_code < 500 and r.status_code not in (408, 429):
@@ -385,11 +390,30 @@ def pulisci_storico(archivio, giorni=GIORNI_STORICO):
         print("Pulizia storico non riuscita:", e)
 
 
+MAX_VOCI_REGISTRO = 1000   # circa una settimana di controlli ogni 10 minuti
+
+
+def registra_lettura(archivio, ora, esito, tentativi, secondi):
+    """Aggiunge una voce al registro cfd_stato/letture: quando la Regione risponde e quando no (per capire a che ora conviene leggere)."""
+    try:
+        voci = list((archivio.leggi("cfd_stato/letture") or {}).get("voci", []))
+        voci.append({"t": ora, "e": esito, "n": tentativi, "s": round(secondi)})
+        archivio.scrivi("cfd_stato/letture", {"voci": voci[-MAX_VOCI_REGISTRO:]})
+    except Exception as e:
+        print("Registro letture non aggiornato:", e)
+
+
 def esegui(archivio, invia=None):
+    import time
     invia = invia or invia_avviso
     ora = datetime.now(TZ).isoformat()
+    t0 = time.monotonic()
+    registrata = False
     try:
-        docs = trova_documenti(http_get(CFD_URL).text)
+        pagina = http_get(CFD_URL)
+        registrata = True
+        registra_lettura(archivio, ora, "ok", _ULTIMI_TENTATIVI, time.monotonic() - t0)
+        docs = trova_documenti(pagina.text)
         if not docs:
             raise RuntimeError("nessun documento di allerta trovato nella pagina (struttura cambiata?)")
         nuovi = 0
@@ -410,6 +434,8 @@ def esegui(archivio, invia=None):
         msg = "Sito della Regione non raggiungibile: bollettino non aggiornato (" + str(e)[:150] + ")"
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "errore", "messaggio": msg[:300], "erroriConsecutivi": n, "nonRaggiungibile": True})
         print("ATTENZIONE:", msg)
+        if not registrata:   # se la pagina e' stata letta e manca solo un PDF, la lettura e' gia' registrata come riuscita
+            registra_lettura(archivio, ora, "timeout", _ULTIMI_TENTATIVI, time.monotonic() - t0)
         if n == 6:
             invia(f"⚠️ Monitoraggio allerte: il sito della Regione non risponde da circa un'ora, i bollettini non sono aggiornati.\nVerifica a mano: {CFD_URL}")
         return 0
