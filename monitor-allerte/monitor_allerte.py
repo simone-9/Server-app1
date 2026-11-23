@@ -575,9 +575,9 @@ def ultimo_bollettino_dpc():
         raise ErroreLettura("bollettino nazionale: elenco aggiornamenti non leggibile (" + str(c)[:120] + ")")
     sha = c[0]["sha"]
     det = requests.get(f"{api}/commits/{sha}", headers=h, timeout=TIMEOUT).json()
-    sigle = sorted({m.group(1) for f in det.get("files", []) for m in [re.search(r"files/geojson/(\d{8}_\d{4})_today\.json$", f.get("filename", ""))] if m})
+    sigle = sorted({m.group(1) for f in det.get("files", []) for m in [re.search(r"files/geojson/(\d{8}_\d{4})_(?:today|tomorrow)\.json$", f.get("filename", ""))] if m})
     if not sigle:
-        raise ErroreLettura("bollettino nazionale: nessun file _today.json nell'ultimo aggiornamento")
+        raise ErroreLettura("bollettino nazionale: nessun file today/tomorrow nell'ultimo aggiornamento")
     return sigle[-1]
 
 

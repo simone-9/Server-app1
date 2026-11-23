@@ -74,4 +74,17 @@ m.riserva_dpc = lambda a, i=None: chiamate.append(1)
 A = m.ArchivioMemoria()
 for k in range(3): m.esegui(A, lambda t: True)
 ok(len(chiamate) == 1, "la riserva parte al terzo controllo fallito di fila (non prima)")
+
+# sigla letta anche se l'ultimo aggiornamento contiene solo il file "tomorrow" (caso reale 23/11/2026)
+import requests, importlib
+m = importlib.reload(m)   # le prove sopra hanno sostituito alcune funzioni
+class _R:
+    def __init__(s, j): s.j = j
+    def json(s): return s.j
+_g = requests.get
+requests.get = lambda url, **k: _R([{"sha": "abc"}]) if url.endswith("/commits") else _R({"files": [{"filename": "files/geojson/20261123_1431_tomorrow.json"}]})
+try:
+    ok(m.ultimo_bollettino_dpc() == "20261123_1431", "ultimo aggiornamento con solo il file tomorrow: sigla trovata")
+finally:
+    requests.get = _g
 sys.exit(1 if ok.fail else 0)
