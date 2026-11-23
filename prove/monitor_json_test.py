@@ -83,4 +83,15 @@ m.riserva_dpc = lambda *a, **k: None
 rc, _ = esegui(REALE, A, home=None)
 ok(rc == 0 and A.doc["cfd_stato/monitor"].get("nonRaggiungibile") is True, "sito giu': stato non raggiungibile, run verde")
 
+# 9) avviso "sito non risponde" una sola volta anche se il contatore riparte
+A = m.ArchivioMemoria(); inviati = []
+def giro(n_prima):
+    A.scrivi("cfd_stato/monitor", {"erroriConsecutivi": n_prima})
+    m.http_get = lambda *a, **k: (_ for _ in ()).throw(m.SitoNonRaggiungibile("x"))
+    m.esegui(A, lambda t: inviati.append(t) or True)
+giro(5); giro(5); giro(6)
+ok(len(inviati) == 1, "avviso sito giu' inviato una sola volta (non a ogni serie di 6)")
+A.scrivi("cfd_stato/monitor", {"avvisoSito": "2026-11-23T01:00:00+01:00"}); giro(5)
+ok(len(inviati) == 2, "dopo 6 ore, se il sito e' ancora giu', un nuovo avviso")
+
 sys.exit(1 if ok.fail else 0)
