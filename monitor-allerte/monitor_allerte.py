@@ -31,6 +31,7 @@ SOGLIA_TELEGRAM = os.environ.get("SOGLIA_TELEGRAM", "ARANCIONE").strip().upper()
 USER_AGENT = "ProtezioneCivile-Monitor/1.0 (monitoraggio allerte, protezione civile comunale)"
 MAX_DOCUMENTI = 6
 TIMEOUT = 40
+TIMEOUT_CONNESSIONE = (10, 40)   # (connessione, lettura): se il sito della Regione non risponde in 10 s si smette subito di aspettare
 TZ = ZoneInfo("Europe/Rome")
 
 LIVELLI = ["VERDE", "GIALLA", "ARANCIONE", "ROSSA"]
@@ -154,15 +155,15 @@ class SitoNonRaggiungibile(Exception):
     """Il sito della Regione non risponde o segnala un guasto suo (503...): problema temporaneo, non dello script."""
 
 
-def http_get(url, tentativi=4):
+def http_get(url, tentativi=3):
     """Scarica una pagina. Riprova con pause crescenti se il sito non risponde (connessione rifiutata, timeout, errore 5xx):
     se non risponde mai solleva SitoNonRaggiungibile. Gli altri errori (es. 404) sono errori veri e passano subito."""
     import requests, time
-    pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "5,15,30").split(",")]
+    pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "5,10").split(",")]
     ultimo = ""
     for i in range(tentativi):
         try:
-            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT_CONNESSIONE)
             if r.status_code < 500 and r.status_code not in (408, 429):
                 r.raise_for_status()
                 return r
