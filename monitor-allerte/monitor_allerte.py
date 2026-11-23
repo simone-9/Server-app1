@@ -155,11 +155,11 @@ class SitoNonRaggiungibile(Exception):
     """Il sito della Regione non risponde o segnala un guasto suo (503...): problema temporaneo, non dello script."""
 
 
-def http_get(url, tentativi=3):
+def http_get(url, tentativi=6):
     """Scarica una pagina. Riprova con pause crescenti se il sito non risponde (connessione rifiutata, timeout, errore 5xx):
     se non risponde mai solleva SitoNonRaggiungibile. Gli altri errori (es. 404) sono errori veri e passano subito."""
     import requests, time
-    pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "5,10").split(",")]
+    pause = [float(x) for x in os.environ.get("PAUSE_RIPROVA", "3,5").split(",")]
     ultimo = ""
     for i in range(tentativi):
         try:
