@@ -333,6 +333,24 @@ def firma(g):
     return g["livello"] + "|" + ";".join(sorted(f"{k}:{v['livello']}" for k, v in g["rischi"].items() if v["livello"] and v["livello"] != "VERDE"))
 
 
+def nome_documento(doc):
+    n = f"{doc['tipo']} di allerta regionale n. {doc['numero'] or '?'}"
+    return n + (f" (agg. {doc['aggiornamento']})" if doc.get("aggiornamento") not in (None, "", "00") else "")
+
+
+def chiavi_lette(archivio):
+    """Documenti gia' elaborati, da qualunque fonte (JSON o PDF): 'Bollettino 176/2026#00' ('#?' = aggiornamento non noto, dal PDF)."""
+    return set((archivio.leggi("cfd_stato/letti") or {}).get("chiavi", []))
+
+
+def segna_letto(archivio, doc):
+    chiavi = list((archivio.leggi("cfd_stato/letti") or {}).get("chiavi", []))
+    k = f"{doc['tipo']} {doc['numero']}#{doc.get('aggiornamento') or '?'}"
+    if k not in chiavi:
+        chiavi.append(k)
+        archivio.scrivi("cfd_stato/letti", {"chiavi": chiavi[-300:]})
+
+
 def elabora(archivio, url, testo_link, pdf_bytes, invia=None):
     invia = invia or invia_avviso
     doc_id, ora = hashlib.sha1(url.encode()).hexdigest()[:20], datetime.now(TZ).isoformat()
@@ -344,27 +362,144 @@ def elabora(archivio, url, testo_link, pdf_bytes, invia=None):
         invia(f"⚠️ Monitoraggio allerte: non riesco a leggere con certezza \"{testo_link}\".\nMotivo: {e}\nVerifica a mano: {url}")
         print("DA VERIFICARE:", url, e)
         return False
+    return registra_documento(archivio, doc_id, url, url, doc, invia, "PDF")
+
+
+def registra_documento(archivio, doc_id, url_doc, url_umano, doc, invia, formato):
+    """Scrive allerte, stato e Telegram per un documento gia' letto (da PDF o da JSON). url_umano = il link da mostrare alle persone."""
+    ora = datetime.now(TZ).isoformat()
     emis = (doc["emissione"] or datetime.now(TZ)).isoformat()
-    nome = f"{doc['tipo']} di allerta regionale n. {doc['numero'] or '?'}"
+    nome = nome_documento(doc)
     firme = dict((archivio.leggi("cfd_stato/notifiche") or {}).get("firme", {}))
     for g in doc["giorni"]:
         f_new, f_old = firma(g), firme.get(g["data"])
         liv_old = f_old.split("|")[0] if f_old else "VERDE"
         notifica = f_new != f_old and (RANGO[g["livello"]] >= RANGO[SOGLIA_TELEGRAM] or RANGO[liv_old] >= RANGO[SOGLIA_TELEGRAM])
-        inviata = invia(messaggio_telegram(g, doc, url, liv_old)) if notifica else False
+        inviata = invia(messaggio_telegram(g, doc, url_umano, liv_old)) if notifica else False
         firme[g["data"]] = f_new
         attivo = g["livello"] != "VERDE"
-        archivio.aggiungi("allerte_cfd_veneto", {
+        rec = {
             "data": g["data"], "giorno": g["giorno"], "zona": f"{ZONA} ({NOME_ZONA})", "livello": g["livello"],
-            "rischi": g["rischi"], "timestamp": emis, "documento": nome, "pdfUrl": url,
+            "rischi": g["rischi"], "timestamp": emis, "documento": nome, "pdfUrl": url_umano,
             "fenomeni": doc["fenomeni"], "tendenza": doc["tendenza"], "inseritoDa": "Monitoraggio automatico CFD",
-            "fonte": "AUTO", "telegramInviato": inviata,
-            "esitoWA": "Notifica inviata" if inviata else ("Registrato (senza invio)" if attivo else "Registrato")})
+            "fonte": "AUTO", "formato": formato, "telegramInviato": inviata,
+            "esitoWA": "Notifica inviata" if inviata else ("Registrato (senza invio)" if attivo else "Registrato")}
+        if doc.get("allertaPrevista"):
+            rec["allertaPrevista"] = doc["allertaPrevista"]
+        if doc.get("noteRischi"):
+            rec["noteRischi"] = doc["noteRischi"]
+        archivio.aggiungi("allerte_cfd_veneto", rec)
     archivio.scrivi("cfd_stato/notifiche", {"firme": firme})
-    archivio.scrivi(f"cfd_documenti/{doc_id}", {"url": url, "stato": "ok", "numero": doc["numero"], "tipo": doc["tipo"], "emissione": emis, "elaborato": ora})
-    archivio.scrivi("cfd_stato/monitor", {"daVerificare": None, "ultimoDocumento": nome, "ultimoDocumentoUrl": url, "ultimaEmissione": emis})
-    print("Elaborato:", nome, [(g["giorno"], g["data"], g["livello"]) for g in doc["giorni"]])
+    archivio.scrivi(f"cfd_documenti/{doc_id}", {"url": url_doc, "stato": "ok", "numero": doc["numero"], "tipo": doc["tipo"], "emissione": emis, "elaborato": ora, "formato": formato})
+    archivio.scrivi("cfd_stato/monitor", {"daVerificare": None, "ultimoDocumento": nome, "ultimoDocumentoUrl": url_umano, "ultimaEmissione": emis})
+    segna_letto(archivio, doc)
+    print("Elaborato:", nome, f"[{formato}]", [(g["giorno"], g["data"], g["livello"]) for g in doc["giorni"]])
     return True
+
+
+# ------------------------------------------------------------------ lettura da JSON (pagina "Protezione civile" della Regione)
+HOME_URL = "https://www.regione.veneto.it/web/protezione-civile/protezione-civile"
+NOTE_RISCHI = {"nota_idraulico": "idraulico", "nota_idrogeologico": "idrogeologico", "nota_idrogeologico_temp": "temporali",
+               "nota_vento": "vento", "nota_neve": "neve", "nota_gelo": "ghiaccio", "nota_valanghe": "valanghe"}
+
+
+def testo_pulito(t):
+    import html as _h
+    if not t:
+        return ""
+    t = re.sub(r"<br\s*/?>", " ", str(t), flags=re.I)
+    return re.sub(r"\s+", " ", _h.unescape(re.sub(r"<[^>]+>", " ", t))).strip()
+
+
+def trova_json(html):
+    """Collegamento 'Versione in formato JSON' dell'ultimo documento (BLMultiCfd_<numero>_<aggiornamento>_<data>.json)."""
+    from bs4 import BeautifulSoup
+    for a in BeautifulSoup(html, "lxml").find_all("a", href=True):
+        if re.search(r"/BLMultiCfd_[^/]*\.json", a["href"], re.I):
+            return urljoin(HOME_URL, a["href"])
+    return None
+
+
+def leggi_json(dati):
+    """JSON della Regione -> stessa struttura di leggi_pdf. Qualunque dubbio = ErroreLettura (si ripiega sul PDF, mai 'verde' per default)."""
+    try:
+        g, zone, note = dati["dati_generali"], dati["zone"], dati.get("note") or {}
+        intest = str(g.get("intestazione", "")).upper()
+        if "ALLERTA REGIONALE" not in intest:
+            raise ErroreLettura("non sembra un documento di allerta regionale")
+        giorni = []
+        for giorno, kz, kd in (("OGGI", "oggi", "data_oggi"), ("DOMANI", "domani", "data_domani")):
+            elenco = zone.get(kz) or []
+            if not elenco and giorno == "DOMANI":
+                continue
+            riga = next((z for z in elenco if str(z.get("area", "")).strip().upper() == ZONA), None)
+            if riga is None:
+                raise ErroreLettura(f"zona {ZONA} non trovata ({giorno.lower()})")
+            rischi = {}
+            for r in riga.get("rischi", []):
+                nome = re.sub(r"\s+", " ", str(r.get("rischio", ""))).strip().upper()
+                liv = str(r.get("liv_descrizione", "")).strip().upper()
+                if liv not in LIVELLI:
+                    raise ErroreLettura(f"livello non riconosciuto per {nome}: '{liv}'")
+                chiave, etichetta = RISCHI_NOTI.get(nome, (re.sub(r"\W+", "_", nome.lower()), nome.capitalize()))
+                rischi[chiave] = {"nome": etichetta, "livello": liv}
+            if not rischi:
+                raise ErroreLettura("nessun livello leggibile per la zona")
+            gg, mm, aa = (int(x) for x in str(g[kd]).split("/"))
+            giorni.append({"giorno": giorno, "data": f"{gg}/{mm}/{aa}", "livello": livello_max(rischi), "rischi": rischi})
+        if not any(x["giorno"] == "OGGI" for x in giorni):
+            raise ErroreLettura("allerta di oggi non trovata")
+        emissione = datetime.strptime(f"{g['data_compilazione']} {g['ora_compilazione']}", "%d/%m/%Y %H:%M:%S").replace(tzinfo=TZ)
+        note_rischi = {k: testo_pulito(note.get(c)) for c, k in NOTE_RISCHI.items() if testo_pulito(note.get(c))}
+        return {"tipo": "Avviso" if "AVVISO" in intest else "Bollettino", "numero": str(g["num_boll"]).strip(),
+                "aggiornamento": str(g.get("aggiornamento", "00")).strip() or "00", "emissione": emissione, "giorni": giorni,
+                "fenomeni": testo_pulito(note.get("fenomeni_previsti")), "tendenza": testo_pulito(note.get("tendenza")),
+                "allertaPrevista": testo_pulito(note.get("allerta_prevista")), "noteRischi": note_rischi}
+    except ErroreLettura:
+        raise
+    except Exception as e:
+        raise ErroreLettura(f"JSON non leggibile: {type(e).__name__}: {e}")
+
+
+def passo_json(archivio, invia, prendi):
+    """Fonte principale. Ritorna quanti documenti nuovi ha elaborato (0 se gia' letto). Solleva se non riesce."""
+    link = trova_json(prendi(HOME_URL).text)
+    if not link:
+        raise ErroreLettura("collegamento al JSON non trovato nella pagina della Protezione civile")
+    doc = leggi_json(prendi(link).json())
+    chiavi, k = chiavi_lette(archivio), f"{doc['tipo']} {doc['numero']}#{doc['aggiornamento']}"
+    ultimo = (archivio.leggi("cfd_stato/monitor") or {}).get("ultimoDocumento")
+    if os.environ.get("RIELABORA", "").lower() != "true" and (
+            k in chiavi or (doc["aggiornamento"] == "00" and (f"{doc['tipo']} {doc['numero']}#?" in chiavi or ultimo == nome_documento(doc)))):
+        if k not in chiavi:
+            segna_letto(archivio, doc)
+        return 0
+    registra_documento(archivio, hashlib.sha1(("json:" + k).encode()).hexdigest()[:20], link, CFD_URL, doc, invia, "JSON")
+    return 1
+
+
+def passo_pdf(archivio, invia, prendi, breve=False):
+    """Fonte di ripiego (e per i documenti che il JSON non copre, come gli avvisi). Ritorna quanti documenti nuovi ha elaborato."""
+    pagina = prendi(CFD_URL, 2 if breve else 6)
+    docs = trova_documenti(pagina.text)
+    if not docs:
+        raise RuntimeError("nessun documento di allerta trovato nella pagina (struttura cambiata?)")
+    nuovi, chiavi = 0, chiavi_lette(archivio)
+    rielabora = os.environ.get("RIELABORA", "").lower() == "true"
+    if rielabora:
+        docs = docs[:3]                           # solo i piu' recenti (gia' notificati: niente doppi messaggi Telegram)
+    for d in reversed(docs):                      # dal piu' vecchio al piu' recente
+        doc_id = hashlib.sha1(d["url"].encode()).hexdigest()[:20]
+        if not rielabora and archivio.leggi(f"cfd_documenti/{doc_id}"):
+            continue
+        m = re.search(r"\bn\.?\s*(\d+/\d{4})", d["testo"])
+        tipo = "Avviso" if re.search(r"avviso", d["testo"], re.I) else "Bollettino"
+        if not rielabora and m and any(c.startswith(f"{tipo} {m.group(1)}#") for c in chiavi):
+            archivio.scrivi(f"cfd_documenti/{doc_id}", {"url": d["url"], "stato": "ok", "numero": m.group(1), "nota": "gia' letto da un'altra fonte", "elaborato": datetime.now(TZ).isoformat()})
+            continue
+        elabora(archivio, d["url"], d["testo"], prendi(d["url"], 3 if breve else 6).content, invia)
+        nuovi += 1
+    return nuovi
 
 
 GIORNI_STORICO = 15
@@ -523,24 +658,34 @@ def esegui(archivio, invia=None):
     invia = invia or invia_avviso
     ora = datetime.now(TZ).isoformat()
     t0 = time.monotonic()
-    registrata = False
+    registrata = [False]
+
+    def prendi(url, tentativi=6):
+        r = http_get(url, tentativi)
+        if not registrata[0]:                     # primo contatto riuscito con il sito: lo si scrive nel registro delle letture
+            registrata[0] = True
+            registra_lettura(archivio, ora, "ok", _ULTIMI_TENTATIVI, time.monotonic() - t0)
+        return r
     try:
-        pagina = http_get(CFD_URL)
-        registrata = True
-        registra_lettura(archivio, ora, "ok", _ULTIMI_TENTATIVI, time.monotonic() - t0)
-        docs = trova_documenti(pagina.text)
-        if not docs:
-            raise RuntimeError("nessun documento di allerta trovato nella pagina (struttura cambiata?)")
-        nuovi = 0
-        rielabora = os.environ.get("RIELABORA", "").lower() == "true"
-        if rielabora:
-            docs = docs[:3]                           # solo i piu' recenti (gia' notificati: niente doppi messaggi Telegram)
-        for d in reversed(docs):                      # dal piu' vecchio al piu' recente
-            if not rielabora and archivio.leggi(f"cfd_documenti/{hashlib.sha1(d['url'].encode()).hexdigest()[:20]}"):
-                continue
-            elabora(archivio, d["url"], d["testo"], http_get(d["url"]).content, invia)
-            nuovi += 1
-        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti", "erroriConsecutivi": 0, "nonRaggiungibile": False})
+        nuovi, via, json_irraggiungibile = None, "JSON", False
+        try:
+            nuovi = passo_json(archivio, invia, prendi)
+        except SitoNonRaggiungibile as e:
+            json_irraggiungibile = True
+            print("JSON non raggiunto, provo la pagina dei bollettini PDF:", e)
+        except Exception as e:
+            print(f"::warning::JSON non utilizzabile ({e}): ripiego sul PDF")
+        if nuovi is None:                         # ripiego: PDF come sempre (gli errori vanno ai gestori qui sotto)
+            via = "PDF"
+            nuovi = passo_pdf(archivio, invia, prendi, breve=json_irraggiungibile)   # sito gia' lento: pochi tentativi
+        else:                                     # JSON riuscito: il PDF solo per i documenti che il JSON non copre; se non risponde non e' un errore
+            try:
+                nuovi += passo_pdf(archivio, invia, prendi, breve=True)
+            except SitoNonRaggiungibile:
+                print("Pagina dei bollettini PDF non raggiunta: eventuali avvisi solo-PDF non controllati in questo giro")
+            except Exception as e:
+                print("Controllo dei PDF non riuscito:", e)
+        archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti ({via})", "formato": via, "erroriConsecutivi": 0, "nonRaggiungibile": False})
         return 0
     except SitoNonRaggiungibile as e:
         # il sito della Regione e' fuori uso: non e' un errore dello script. Si tiene l'ultimo bollettino, si segnala "non aggiornato"
@@ -549,7 +694,7 @@ def esegui(archivio, invia=None):
         msg = "Sito della Regione non raggiungibile: bollettino non aggiornato (" + str(e)[:150] + ")"
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "errore", "messaggio": msg[:300], "erroriConsecutivi": n, "nonRaggiungibile": True})
         print("ATTENZIONE:", msg)
-        if not registrata:   # se la pagina e' stata letta e manca solo un PDF, la lettura e' gia' registrata come riuscita
+        if not registrata[0]:   # se la pagina e' stata letta e manca solo un PDF, la lettura e' gia' registrata come riuscita
             registra_lettura(archivio, ora, "timeout", _ULTIMI_TENTATIVI, time.monotonic() - t0)
         if n >= int(os.environ.get("RISERVA_DPC_DOPO", "3")):
             riserva_dpc(archivio, invia)       # fonte di riserva: bollettino nazionale (solo se piu' recente e piu' grave)
