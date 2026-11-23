@@ -653,6 +653,9 @@ def registra_lettura(archivio, ora, esito, tentativi, secondi):
         print("Registro letture non aggiornato:", e)
 
 
+AVVISO_SITO_ORE = float(os.environ.get("AVVISO_SITO_ORE", "6"))
+
+
 def esegui(archivio, invia=None):
     import time
     invia = invia or invia_avviso
@@ -698,8 +701,12 @@ def esegui(archivio, invia=None):
             registra_lettura(archivio, ora, "timeout", _ULTIMI_TENTATIVI, time.monotonic() - t0)
         if n >= int(os.environ.get("RISERVA_DPC_DOPO", "3")):
             riserva_dpc(archivio, invia)       # fonte di riserva: bollettino nazionale (solo se piu' recente e piu' grave)
-        if n == 6:
-            invia(f"⚠️ Monitoraggio allerte: il sito della Regione non risponde da circa un'ora, i bollettini non sono aggiornati.\nVerifica a mano: {CFD_URL}")
+        if n >= 6:
+            # un solo avviso ogni 6 ore: se il sito va e viene, il contatore riparte da zero e lo stesso messaggio si ripeterebbe di continuo
+            ultimo = (archivio.leggi("cfd_stato/monitor") or {}).get("avvisoSito")
+            if not ultimo or datetime.now(TZ) - datetime.fromisoformat(ultimo) > timedelta(hours=AVVISO_SITO_ORE):
+                if invia(f"⚠️ Monitoraggio allerte: il sito della Regione non risponde da circa un'ora, i bollettini non sono aggiornati.\nVerifica a mano: {CFD_URL}"):
+                    archivio.scrivi("cfd_stato/monitor", {"avvisoSito": ora})
         return 0
     except Exception as e:
         n = int((archivio.leggi("cfd_stato/monitor") or {}).get("erroriConsecutivi", 0)) + 1
