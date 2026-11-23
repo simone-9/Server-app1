@@ -43,4 +43,5 @@ jobs:
           COMUNE: ${{ vars.COMUNE }}
           CFD_ZONA: ${{ vars.CFD_ZONA }}
           CFD_NOME_ZONA: ${{ vars.CFD_NOME_ZONA }}
+          GITHUB_TOKEN: ${{ github.token }}   # lettura di riserva del bollettino nazionale (limite di richieste piu' alto)
         run: python monitor-allerte/monitor_allerte.py

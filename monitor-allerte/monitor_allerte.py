@@ -390,6 +390,121 @@ def pulisci_storico(archivio, giorni=GIORNI_STORICO):
         print("Pulizia storico non riuscita:", e)
 
 
+# ------------------------------------------------------------------ riserva: bollettino nazionale della Protezione Civile
+# Se il sito della Regione non risponde per piu' controlli di fila, si legge il bollettino di criticita' nazionale del DPC
+# (repository pubblico su GitHub, CC BY 4.0). Copre solo idraulico, idrogeologico e temporali, esce dopo il bollettino regionale
+# e non conosce vento, neve, ghiaccio, valanghe e calore. Per questo e' solo una RISERVA PRUDENTE:
+#   - non scrive mai "verde" (se non ha niente da segnalare non cambia nulla);
+#   - non cancella e non abbassa un livello gia' noto (niente messaggi di "rientro" da questa fonte);
+#   - e' usata solo se piu' recente dell'ultimo documento regionale letto.
+DPC_REPO = "pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica"
+DPC_RAW = f"https://raw.githubusercontent.com/{DPC_REPO}/master/files/geojson/"
+DPC_URL = f"https://github.com/{DPC_REPO}"
+RISCHI_DPC = {"Per rischio idraulico": ("idraulico", "Idraulico"), "Per rischio idrogeologico": ("idrogeologico", "Idrogeologico"),
+              "Per rischio temporali": ("temporali", "Idrogeologico per temporali")}
+
+
+def livello_da_testo_dpc(t):
+    u = (t or "").upper()
+    for l in ("ROSSA", "ARANCIONE", "GIALLA"):
+        if l in u:
+            return l
+    if "NESSUNA" in u or "ASSENZA" in u:
+        return "VERDE"
+    raise ErroreLettura(f"livello non riconosciuto nel bollettino nazionale: '{t}'")
+
+
+def zona_dpc(geojson, comune):
+    """Dal geojson del DPC ricava la zona che contiene il comune: ({rischio: {nome, livello}}, nome zona)."""
+    for f in geojson.get("features", []):
+        p = f.get("properties") or {}
+        if comune.lower() in [str(c).lower() for c in p.get("Comuni", [])]:
+            rischi = {}
+            for campo, (chiave, etichetta) in RISCHI_DPC.items():
+                if campo not in p:
+                    raise ErroreLettura(f"campo '{campo}' mancante nel bollettino nazionale")
+                rischi[chiave] = {"nome": etichetta, "livello": livello_da_testo_dpc(p[campo])}
+            return rischi, p.get("Nome zona", "")
+    raise ErroreLettura(f"comune {comune} non trovato nel bollettino nazionale")
+
+
+def ultimo_bollettino_dpc():
+    """Sigla AAAAMMGG_HHMM dell'ultimo bollettino nel repository del DPC (ultimo commit che ha toccato files/geojson)."""
+    import requests
+    h = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
+    if os.environ.get("GITHUB_TOKEN"):
+        h["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+    api = f"https://api.github.com/repos/{DPC_REPO}"
+    c = requests.get(f"{api}/commits", params={"path": "files/geojson", "per_page": 1}, headers=h, timeout=TIMEOUT).json()
+    if not isinstance(c, list) or not c:
+        raise ErroreLettura("bollettino nazionale: elenco aggiornamenti non leggibile (" + str(c)[:120] + ")")
+    sha = c[0]["sha"]
+    det = requests.get(f"{api}/commits/{sha}", headers=h, timeout=TIMEOUT).json()
+    sigle = sorted({m.group(1) for f in det.get("files", []) for m in [re.search(r"files/geojson/(\d{8}_\d{4})_today\.json$", f.get("filename", ""))] if m})
+    if not sigle:
+        raise ErroreLettura("bollettino nazionale: nessun file _today.json nell'ultimo aggiornamento")
+    return sigle[-1]
+
+
+def scarica_dpc(sigla, quando):
+    return http_get(f"{DPC_RAW}{sigla}_{quando}.json").json()
+
+
+def messaggio_riserva(g, url, emissione, prec_liv):
+    icone = {"ARANCIONE": "\U0001F7E0", "ROSSA": "\U0001F534"}
+    righe = [f"{icone.get(g['livello'], '')} ALLERTA {g['livello']} - {g['giorno']} ({data_con_giorno(g['data'])})",
+             f"Zona {ZONA} - {NOME_ZONA} ({COMUNE})", ""]
+    attivi = [v for v in g["rischi"].values() if v["livello"] and v["livello"] != "VERDE"]
+    if attivi:
+        righe.append("Rischi:")
+        righe += [f"• {v['nome']}: {v['livello']}" for v in attivi]
+    righe += ["", "ATTENZIONE: il sito della Regione non risponde. Fonte di riserva: bollettino nazionale della Protezione Civile "
+              f"(emissione {emissione.strftime('%d/%m/%Y ore %H:%M')}), senza vento, neve, ghiaccio e calore. Verifica il bollettino regionale.", url]
+    return "\n".join(righe)
+
+
+def riserva_dpc(archivio, invia=None):
+    """Ritorna quante allerte ha scritto. Non solleva eccezioni verso il chiamante."""
+    invia = invia or invia_avviso
+    try:
+        sigla = ultimo_bollettino_dpc()
+        stato = archivio.leggi("cfd_stato/dpc") or {}
+        if stato.get("ultimo") == sigla:
+            return 0                                   # gia' visto
+        emissione = datetime.strptime(sigla, "%Y%m%d_%H%M").replace(tzinfo=TZ)
+        reg = (archivio.leggi("cfd_stato/monitor") or {}).get("ultimaEmissione")
+        if reg and datetime.fromisoformat(reg) >= emissione:
+            archivio.scrivi("cfd_stato/dpc", {"ultimo": sigla})
+            print(f"Riserva DPC {sigla}: il documento regionale letto e' piu' recente, non serve")
+            return 0
+        firme = dict((archivio.leggi("cfd_stato/notifiche") or {}).get("firme", {}))
+        scritte = 0
+        for quando, giorno, delta in (("today", "OGGI", 0), ("tomorrow", "DOMANI", 1)):
+            rischi, nome_zona = zona_dpc(scarica_dpc(sigla, quando), COMUNE)
+            d = emissione.date() + timedelta(days=delta)
+            data = f"{d.day}/{d.month}/{d.year}"
+            g = {"giorno": giorno, "data": data, "livello": livello_max(rischi), "rischi": rischi}
+            f_old = firme.get(data)
+            liv_old = f_old.split("|")[0] if f_old else "VERDE"
+            if RANGO[g["livello"]] <= RANGO[liv_old] or g["livello"] == "VERDE":
+                continue                               # mai verde, mai abbassare: la riserva puo' solo segnalare di piu'
+            inviata = invia(messaggio_riserva(g, DPC_URL, emissione, liv_old)) if RANGO[g["livello"]] >= RANGO[SOGLIA_TELEGRAM] else False
+            firme[data] = firma(g)
+            archivio.aggiungi("allerte_cfd_veneto", {
+                "data": data, "giorno": giorno, "zona": f"{ZONA} ({NOME_ZONA})", "livello": g["livello"], "rischi": rischi,
+                "timestamp": emissione.isoformat(), "documento": "Bollettino di criticita' nazionale (Protezione Civile) - riserva",
+                "pdfUrl": DPC_URL, "fenomeni": "", "tendenza": "", "inseritoDa": "Monitoraggio automatico (riserva Protezione Civile)",
+                "fonte": "AUTO-DPC", "telegramInviato": inviata, "esitoWA": "Notifica inviata" if inviata else "Registrato (senza invio)"})
+            scritte += 1
+            print(f"Riserva DPC {sigla}: {giorno} {data} {g['livello']} (zona {nome_zona})")
+        archivio.scrivi("cfd_stato/notifiche", {"firme": firme})
+        archivio.scrivi("cfd_stato/dpc", {"ultimo": sigla, "letto": datetime.now(TZ).isoformat()})
+        return scritte
+    except Exception as e:
+        print("Riserva DPC non riuscita:", e)
+        return 0
+
+
 MAX_VOCI_REGISTRO = 1000   # circa una settimana di controlli ogni 10 minuti
 
 
@@ -436,6 +551,8 @@ def esegui(archivio, invia=None):
         print("ATTENZIONE:", msg)
         if not registrata:   # se la pagina e' stata letta e manca solo un PDF, la lettura e' gia' registrata come riuscita
             registra_lettura(archivio, ora, "timeout", _ULTIMI_TENTATIVI, time.monotonic() - t0)
+        if n >= int(os.environ.get("RISERVA_DPC_DOPO", "3")):
+            riserva_dpc(archivio, invia)       # fonte di riserva: bollettino nazionale (solo se piu' recente e piu' grave)
         if n == 6:
             invia(f"⚠️ Monitoraggio allerte: il sito della Regione non risponde da circa un'ora, i bollettini non sono aggiornati.\nVerifica a mano: {CFD_URL}")
         return 0
