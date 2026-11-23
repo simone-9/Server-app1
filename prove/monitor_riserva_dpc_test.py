@@ -34,6 +34,7 @@ r = A.liste.get("allerte_cfd_veneto", [])
 ok(n == 1 and len(r) == 1 and r[0]["livello"] == "ARANCIONE" and r[0]["data"] == "24/11/2026" and r[0]["giorno"] == "DOMANI", "arancione domani registrato, verde oggi ignorato")
 ok(len(msgs) == 1 and "ALLERTA ARANCIONE" in msgs[0] and "senza vento" in msgs[0], "Telegram con avviso sulla fonte di riserva")
 ok(A.doc["cfd_stato/dpc"]["ultimo"] == "20261123_1430", "bollettino segnato come visto")
+ok(bool(A.doc["cfd_stato/monitor"].get("ultimoOkDpc")), "ultima lettura riuscita del DPC registrata")
 
 # 2) gialla: registrata ma niente Telegram
 A, n, msgs = prova(geo(tem="Ordinaria / ALLERTA GIALLA"), geo())

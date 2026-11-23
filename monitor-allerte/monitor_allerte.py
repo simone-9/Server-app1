@@ -603,6 +603,7 @@ def riserva_dpc(archivio, invia=None):
     invia = invia or invia_avviso
     try:
         sigla = ultimo_bollettino_dpc()
+        archivio.scrivi("cfd_stato/monitor", {"ultimoOkDpc": datetime.now(TZ).isoformat()})   # bollettino nazionale letto: l'app lo conta come ultima lettura riuscita
         stato = archivio.leggi("cfd_stato/dpc") or {}
         if stato.get("ultimo") == sigla:
             return 0                                   # gia' visto
