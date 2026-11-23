@@ -76,7 +76,8 @@ for k in range(3): m.esegui(A, lambda t: True)
 ok(len(chiamate) == 1, "la riserva parte al terzo controllo fallito di fila (non prima)")
 
 # sigla letta anche se l'ultimo aggiornamento contiene solo il file "tomorrow" (caso reale 23/11/2026)
-import requests
+import requests, importlib
+m = importlib.reload(m)   # le prove sopra hanno sostituito alcune funzioni
 class _R:
     def __init__(s, j): s.j = j
     def json(s): return s.j
