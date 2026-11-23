@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Recupera lo stato precedente
         run: |
@@ -34,7 +34,7 @@ jobs:
           git fetch --depth=1 origin data || true
           git show origin/data:state.json > out/state.json 2>/dev/null || echo '{}' > out/state.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
