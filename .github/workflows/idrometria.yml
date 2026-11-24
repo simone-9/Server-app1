@@ -41,6 +41,11 @@ jobs:
       - name: Strumento per leggere il bollettino PDF
         run: command -v pdftotext >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils)
 
+      - name: Collega la VPN italiana (solo se il segreto WG_CONF_IDRO e' impostato)
+        env:
+          WG_CONF: ${{ secrets.WG_CONF_IDRO }}
+        run: bash scripts/vpn-italia.sh su
+
       - name: Scarica dati ARPAV e invia gli avvisi
         run: node scripts/idro.mjs
         env:
@@ -54,6 +59,10 @@ jobs:
           CFD_ZONA: ${{ vars.CFD_ZONA }}
           TEST_MESSAGGIO: ${{ inputs.prova && '1' || '' }}
           TEST_PUSH: ${{ inputs.prova_push && '1' || '' }}
+
+      - name: Scollega la VPN
+        if: always()
+        run: bash scripts/vpn-italia.sh giu
 
       - name: Pubblica i dati per l'app (ramo "data")
         if: always() && hashFiles('out/idro.json') != ''
