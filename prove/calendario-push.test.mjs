@@ -11,7 +11,7 @@ r = daNotificare([E('a', { creato: m(5) })], r.stato, ora); assert.equal(r.event
 r = daNotificare([E('c', { creato: m(10) }), E('e'), E('p', { creato: m(60 * 30) }), E('s', { creato: m(5), data: '2026-11-01', dataFine: '2026-11-02' })], vuoto, ora);
 assert.deepEqual(r.eventi.map(e => e.id + ':' + e.tipo), ['c:nuovo'], 'solo il nuovo, non quelli vecchi o gia passati');
 r = daNotificare([E('a', { data: '2026-11-09' }), E('b', { data: '2026-11-07' }), E('x', { data: '2026-11-08' }), E('d', { data: '2026-11-09', creato: m(120) }), E('f', { data: '2026-11-09', creato: undefined })], vuoto, ora);
-assert.deepEqual(r.eventi.map(e => e.id + ':' + e.tipo + (e.giorni || '')).sort(), ['a:promemoria3', 'b:promemoria1', 'd:nuovo', 'f:promemoria3'], 'd e nuovo: niente promemoria in piu');
+assert.deepEqual(r.eventi.map(e => e.id + ':' + e.tipo + (e.giorni || '')).sort(), ['a:promemoria3', 'b:promemoria-si1', 'b:promemoria1', 'd:nuovo', 'f:promemoria3'], 'd e nuovo: niente promemoria in piu');
 r = daNotificare([E('a', { data: '2026-11-09' })], { nuovi: [], promemoria: ['a|3'] }, ora); assert.equal(r.eventi.length, 0, 'promemoria gia mandato');
 r = daNotificare([E('a', { data: '2026-11-09' })], vuoto, Date.parse('2026-11-06T05:00:00Z')); assert.equal(r.eventi.length, 0, 'di notte (6:00 a Roma) niente promemoria');
 r = daNotificare([E('a', { data: '2026-11-09' })], vuoto, Date.parse('2026-11-06T19:30:00Z')); assert.equal(r.eventi.length, 0, 'dopo le 20 niente promemoria');
@@ -24,6 +24,8 @@ assert.deepEqual(destinatari({ tipo: 'nuovo', id: 'a', c: {} }, ruoli, ades, pro
 assert.deepEqual(destinatari({ tipo: 'promemoria', id: 'a', giorni: 3, c: {} }, ruoli, ades, prop).sort(), ['admin@x.it', 'v3@x.it'], '3 giorni: chi non ha risposto e non si e proposto');
 assert.deepEqual(destinatari({ tipo: 'promemoria', id: 'a', giorni: 1, c: {} }, ruoli, ades, prop).sort(), ['admin@x.it', 'v2@x.it', 'v3@x.it'], '1 giorno: anche chi ha detto Forse');
 assert.deepEqual(destinatari({ tipo: 'promemoria', id: 'b', giorni: 1, c: {} }, ruoli, ades, []).sort(), ['admin@x.it', 'v1@x.it', 'v2@x.it', 'v4@x.it']);
+assert.deepEqual(destinatari({ tipo: 'promemoria-si', id: 'a', giorni: 1, c: {} }, ruoli, ades, prop).sort(), ['v1@x.it'], 'Domani ci sei: solo chi ha detto Ci sono');
+assert.match(messaggio({ tipo: 'promemoria-si', id: 'a', giorni: 1, c: { tipo: 'Manifestazione', titolo: 'Sagra', data: '2026-11-07' } }).titolo, /^Domani ci sei/);
 // --- messaggio + preferenze
 const mm = messaggio({ tipo: 'nuovo', id: 'a', c: { tipo: 'Esercitazione', titolo: 'Campo estivo', data: '2026-11-20', ora: '09:00', luogo: 'Magazzino' } });
 assert.match(mm.titolo, /Nuovo evento · Esercitazione/); assert.match(mm.testo, /20\/11 ore 09:00/); assert.equal(mm.tag, 'calendario-new-a');

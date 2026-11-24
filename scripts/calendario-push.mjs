@@ -1,5 +1,6 @@
 // Notifiche push (Firebase Cloud Messaging) del calendario attività, anche ad app chiusa:
 //  - NUOVO EVENTO programmato (esercitazione, manifestazione, prevenzione...) -> a tutti gli utenti (esclusi i Monitor)
+//  - PROMEMORIA «Domani ci sei» il giorno prima a chi ha risposto «Ci sono»
 //  - PROMEMORIA 3 giorni e 1 giorno prima -> a chi non ha ancora risposto «Ci sono / Forse / Non ci sono» (il giorno prima anche a chi ha risposto «Forse»)
 // Gira su GitHub Actions (.github/workflows/calendario-push.yml) ogni 15 minuti e subito quando l'app lo avvia (dopo aver programmato un evento).
 // Legge solo gli eventi recenti o futuri e ricorda in «impostazioni/calendario_push» cio' che ha gia' notificato. I promemoria partono tra le 8 e le 20 (ora italiana).
@@ -34,6 +35,7 @@ export function daNotificare(eventi, stato, ora = Date.now()) {
     if (!isNaN(t) && ora - t < 12 * 3600 * 1000) continue;   // appena programmato: l'annuncio basta
     const k = e.id + '|' + n; if (gia.promemoria.has(k)) continue;
     promemoria.push(k); out.push({ tipo: 'promemoria', id: e.id, c, giorni: n });
+    if (n === 1) { const ks = e.id + '|1si'; if (!gia.promemoria.has(ks)) { promemoria.push(ks); out.push({ tipo: 'promemoria-si', id: e.id, c, giorni: 1 }); } }   // il giorno prima anche a chi ha detto «Ci sono»
   }
   return { eventi: out, stato: { nuovi: [...gia.nuovi, ...nuovi].slice(-MAX_CHIAVI), promemoria: [...gia.promemoria, ...promemoria].slice(-MAX_CHIAVI) }, primo };
 }
@@ -42,6 +44,7 @@ export function daNotificare(eventi, stato, ora = Date.now()) {
 export function destinatari(ev, ruoli, adesioni, proposte) {
   const tutti = ruoli.filter(r => String((r.campi || {}).role || '').trim() !== 'Monitor').map(r => String(r.id).toLowerCase());
   if (ev.tipo === 'nuovo') return tutti;
+  if (ev.tipo === 'promemoria-si') { const si = new Set(adesioni.map(a => a.campi || {}).filter(c => c.eventoId === ev.id && c.stato === 'si').map(c => String(c.utente || '').toLowerCase())); return tutti.filter(em => si.has(em)); }
   const risposte = new Map();
   for (const a of adesioni) { const c = a.campi || {}; if (c.eventoId === ev.id) risposte.set(String(c.utente || '').toLowerCase(), c.stato); }
   const proposti = new Set(proposte.filter(p => (p.campi || {}).eventoId === ev.id).map(p => String(p.campi.utente || '').toLowerCase()));
@@ -51,6 +54,7 @@ export function destinatari(ev, ruoli, adesioni, proposte) {
 export function messaggio(ev) {
   const c = ev.c, dove = c.luogo ? ' · ' + breve(c.luogo, 40) : '';
   if (ev.tipo === 'nuovo') return { titolo: 'Nuovo evento · ' + breve(c.tipo || 'Calendario', 30), testo: breve(`${c.titolo} · ${quando(c)}${dove}. Rispondi: Ci sono / Forse / Non ci sono.`, 140), tag: 'calendario-new-' + ev.id, icona: '📅' };
+  if (ev.tipo === 'promemoria-si') return { titolo: 'Domani ci sei · ' + breve(c.tipo || 'Evento', 30), testo: breve(`${c.titolo} · ${quando(c)}${dove}. Hai risposto «Ci sono»: se non puoi più, aggiorna la risposta dal calendario.`, 140), tag: `calendario-si-${ev.id}`, icona: '✅' };
   return { titolo: (ev.giorni === 1 ? 'Domani · ' : 'Tra 3 giorni · ') + breve(c.tipo || 'Evento', 30), testo: breve(`${c.titolo} · ${quando(c)}${dove}. Non hai ancora confermato: rispondi dal calendario.`, 140), tag: `calendario-ric-${ev.id}-${ev.giorni}`, icona: '⏰' };
 }
 
@@ -72,7 +76,7 @@ export async function main(opz = {}) {
         console.log(`Push ${ev.tipo} «${breve(ev.c.titolo, 30)}»: ${e.inviati}/${e.dispositivi} dispositivi, ${e.rimossi} rimossi`); inviate++;
       } catch (e) {
         errori++; console.log('::error::Push ' + ev.tipo + ' ' + ev.id + ' non inviata: ' + e.message);
-        const lista = ev.tipo === 'nuovo' ? nuovo.nuovi : nuovo.promemoria, chiave = ev.tipo === 'nuovo' ? ev.id : ev.id + '|' + ev.giorni;
+        const lista = ev.tipo === 'nuovo' ? nuovo.nuovi : nuovo.promemoria, chiave = ev.tipo === 'nuovo' ? ev.id : ev.id + '|' + (ev.tipo === 'promemoria-si' ? '1si' : ev.giorni);
         const i = lista.lastIndexOf(chiave); if (i >= 0) lista.splice(i, 1);   // si riprova alla prossima esecuzione
       }
     }

@@ -358,10 +358,21 @@ const stato = existsSync(fileStato) ? JSON.parse(readFileSync(fileStato, 'utf8')
 // bollettino meteo: se non si riesce a leggerlo si riusa l'ultimo letto bene (segnato come non aggiornato)
 let meteo = null;
 try {
-  const b = await pdfBollettino();
-  meteo = leggiBollettino(testoPdf(b.buf), cfg.bollettino.zone);
-  meteo.url = b.url;
-  stato.meteo = meteo;
+  // più tentativi distanziati: il sito della Regione a volte risponde in ritardo o a intermittenza
+  const TENTATIVI = Number(process.env.BVM_TENTATIVI) || 4, PAUSA_MS = process.env.BVM_PAUSA_MS != null ? Number(process.env.BVM_PAUSA_MS) : 30000;
+  let ultimo = null;
+  for (let t = 1; t <= TENTATIVI && !meteo; t++) {
+    try {
+      const b = await pdfBollettino();
+      meteo = leggiBollettino(testoPdf(b.buf), cfg.bollettino.zone);
+      meteo.url = b.url;
+      stato.meteo = meteo;
+    } catch (e) {
+      ultimo = e; meteo = null;
+      if (t < TENTATIVI) { console.log(`::notice::Bollettino, tentativo ${t}/${TENTATIVI} non riuscito (${e && e.message ? e.message : e}): riprovo tra ${Math.round(PAUSA_MS / 1000)} s`); await new Promise(r => setTimeout(r, PAUSA_MS)); }
+    }
+  }
+  if (!meteo && ultimo) throw ultimo;
 } catch (e) {
   console.log('::warning::Bollettino meteo non letto: ' + (e && e.message ? e.message : e));
   if (stato.meteo) meteo = Object.assign({}, stato.meteo, { nonAggiornato: true });
