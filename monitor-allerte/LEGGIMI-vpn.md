@@ -21,3 +21,14 @@ Il sito della Regione Veneto risponde solo a indirizzi italiani. I server di Git
 - Con la VPN passa tutto il traffico del controllo (compresi Firebase e Telegram): è normale.
 - Per disattivare la VPN basta cancellare i due segreti.
 - Se la VPN non si collega, il controllo parte lo stesso e il ripiego sul bollettino nazionale resta attivo.
+
+## Tailscale con il mini PC di casa come uscita (con ripiego sulla VPN)
+Lo script `scripts/rete-italia.sh` prova nell'ordine: **1) Tailscale** con il mini PC come uscita, **2) VPN WireGuard** (i segreti `WG_CONF` / `WG_CONF_IDRO`), **3) la rete di GitHub**. Ogni uscita viene provata con una richiesta alla pagina della Regione: se non risponde (mini PC spento, senza rete, uscita non approvata) si passa alla successiva.
+
+Segreti da aggiungere (Settings → Secrets and variables → Actions):
+- `TS_AUTHKEY`: chiave di autenticazione di Tailscale (pannello Tailscale → Settings → Keys → Generate auth key; riutilizzabile, temporanea, pre-approvata).
+- `TS_EXIT_NODE`: nome (o indirizzo 100.x.y.z) del mini PC su Tailscale.
+
+Sul mini PC: installare Tailscale, avviarlo con `sudo tailscale up --advertise-exit-node`, abilitare l'inoltro IP (`echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-tailscale.conf && sudo sysctl -p /etc/sysctl.d/99-tailscale.conf`) e **approvare l'uscita** dal pannello Tailscale (Machines → il mini PC → Edit route settings → Use as exit node).
+
+Senza i segreti di Tailscale tutto funziona come prima (VPN, poi rete di GitHub).

@@ -32,10 +32,12 @@ jobs:
           cache: pip
           cache-dependency-path: monitor-allerte/requirements.txt
       - run: pip install -r monitor-allerte/requirements.txt
-      - name: Collega la VPN italiana (solo se il segreto WG_CONF e' impostato)
+      - name: Collega la rete italiana (Tailscale, poi VPN, poi rete di GitHub)
         env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          TS_EXIT_NODE: ${{ secrets.TS_EXIT_NODE }}
           WG_CONF: ${{ secrets.WG_CONF }}
-        run: bash scripts/vpn-italia.sh su
+        run: bash scripts/rete-italia.sh su
       - name: Controlla il CFD e aggiorna Firebase
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -49,6 +51,6 @@ jobs:
           CFD_NOME_ZONA: ${{ vars.CFD_NOME_ZONA }}
           GITHUB_TOKEN: ${{ github.token }}   # lettura di riserva del bollettino nazionale (limite di richieste piu' alto)
         run: python monitor-allerte/monitor_allerte.py
-      - name: Scollega la VPN
+      - name: Scollega la rete italiana
         if: always()
-        run: bash scripts/vpn-italia.sh giu
+        run: bash scripts/rete-italia.sh giu
