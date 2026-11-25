@@ -313,6 +313,16 @@ class ArchivioFirestore:
                 n += 1
         return n
 
+    def aggiorna_se(self, coll, calcola):
+        """Per ogni documento della raccolta chiama calcola(dati): se ritorna un dizionario, quei campi vengono aggiornati."""
+        n = 0
+        for d in self.db.collection(PREF + coll).stream():
+            campi = calcola(d.to_dict() or {})
+            if campi:
+                d.reference.update(campi)
+                n += 1
+        return n
+
 
 class ArchivioMemoria:
     def __init__(self):
@@ -326,6 +336,15 @@ class ArchivioMemoria:
 
     def aggiungi(self, coll, dati):
         self.liste.setdefault(coll, []).append(dati)
+
+    def aggiorna_se(self, coll, calcola):
+        n = 0
+        for r in self.liste.get(coll, []):
+            campi = calcola(r)
+            if campi:
+                r.update(campi)
+                n += 1
+        return n
 
 
 # ------------------------------------------------------------------ elaborazione
@@ -480,6 +499,33 @@ def pdf_del_documento(prendi, doc):
     except Exception as e:
         print(f"Link al PDF non trovato ({type(e).__name__}): resta la pagina del CFD")
     return CFD_URL
+
+
+def ripara_link_pdf(archivio, prendi):
+    """Il collegamento al PDF si cerca una volta sola, quando il documento e' registrato: se in quel momento la pagina CFD era lenta
+    il documento resta col link alla pagina e non si riprova piu'. Qui si ripara: finche' l'ultimo documento ha ancora il link alla
+    pagina, si rilegge l'elenco e si sostituisce il link con quello del PDF, nelle allerte registrate e nello stato del monitor."""
+    st = archivio.leggi("cfd_stato/monitor") or {}
+    if not st.get("ultimoDocumento") or st.get("ultimoDocumentoUrl") != CFD_URL:
+        return 0
+    elenco = trova_documenti(prendi(CFD_URL, 2).text)
+
+    def url_di(nome):
+        voluto, avviso = _numero_doc(nome), bool(re.search(r"avviso", nome or "", re.I))
+        if voluto is None:
+            return None
+        for d in elenco:
+            if _numero_doc(d["testo"]) == voluto and bool(re.search(r"avviso", d["testo"], re.I)) == avviso:
+                return d["url"]
+        return None
+    n = archivio.aggiorna_se("allerte_cfd_veneto", lambda r: {"pdfUrl": url_di(str(r.get("documento", "")))}
+                             if r.get("pdfUrl") == CFD_URL and url_di(str(r.get("documento", ""))) else None)
+    nuovo = url_di(st["ultimoDocumento"])
+    if nuovo:
+        archivio.scrivi("cfd_stato/monitor", {"ultimoDocumentoUrl": nuovo})
+    if n or nuovo:
+        print(f"Link al PDF ripristinato per {n} allerte registrate (ultimo documento: {'trovato' if nuovo else 'non ancora in elenco'})")
+    return n
 
 
 def passo_json(archivio, invia, prendi):
@@ -710,6 +756,10 @@ def esegui(archivio, invia=None):
                 print("Pagina dei bollettini PDF non raggiunta: eventuali avvisi solo-PDF non controllati in questo giro")
             except Exception as e:
                 print("Controllo dei PDF non riuscito:", e)
+            try:
+                ripara_link_pdf(archivio, prendi)       # se il link e' rimasto alla pagina CFD (pagina lenta alla registrazione), lo si ripara
+            except Exception as e:
+                print(f"Link al PDF non riparato ({type(e).__name__}): si riprova al prossimo controllo")
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti ({via})", "formato": via, "erroriConsecutivi": 0, "nonRaggiungibile": False})
         segnala_letto(True)
         riepilogo(f"✅ Bollettino letto dal sito della Regione (via {via}): {nuovi} nuovi documenti." + (" [secondo tentativo]" if os.environ.get("TENTATIVO") == "2" else ""))
