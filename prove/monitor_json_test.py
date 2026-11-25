@@ -114,4 +114,16 @@ ok(len(inviati) == 1, "avviso sito giu' inviato una sola volta (non a ogni serie
 A.scrivi("cfd_stato/monitor", {"avvisoSito": "2026-11-23T01:00:00+01:00"}); giro(5)
 ok(len(inviati) == 2, "dopo 6 ore, se il sito e' ancora giu', un nuovo avviso")
 
+# 10) secondo tentativo (TENTATIVO=2): se fallisce di nuovo non conta come un controllo in piu'; se riesce azzera il contatore e segnala «letto»
+import os, tempfile
+A = m.ArchivioMemoria(); uscita = tempfile.NamedTemporaryFile(delete=False).name; os.environ["GITHUB_OUTPUT"] = uscita
+A.scrivi("cfd_stato/monitor", {"erroriConsecutivi": 2})
+m.http_get = lambda *a, **k: (_ for _ in ()).throw(m.SitoNonRaggiungibile("x"))
+os.environ["TENTATIVO"] = "2"; m.esegui(A, lambda t: True)
+ok(A.doc["cfd_stato/monitor"]["erroriConsecutivi"] == 2, "secondo tentativo fallito: il contatore non aumenta")
+del os.environ["TENTATIVO"]; m.esegui(A, lambda t: True)
+ok(A.doc["cfd_stato/monitor"]["erroriConsecutivi"] == 3, "primo tentativo fallito: il contatore aumenta di uno")
+ok(open(uscita).read().split() == ["letto=false", "letto=false"], "il passo segnala letto=false quando il sito non risponde")
+del os.environ["GITHUB_OUTPUT"]
+
 sys.exit(1 if ok.fail else 0)

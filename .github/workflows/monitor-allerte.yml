@@ -24,6 +24,8 @@ jobs:
     # (in quel caso sostituisci la riga sotto con: runs-on: [self-hosted, monitor-allerte]).
     runs-on: ubuntu-latest
     timeout-minutes: 6
+    outputs:
+      letto: ${{ steps.controllo.outputs.letto }}     # «false» se il sito della Regione non e' stato letto: parte il secondo tentativo
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -40,7 +42,50 @@ jobs:
           WG_CONF_2: ${{ secrets.WG_CONF_2 }}     # facoltativo: configurazione di riserva
         run: bash scripts/vpn-italia.sh su
       - name: Controlla il CFD e aggiorna Firebase
+        id: controllo
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_TELEGRAM: ${{ inputs.test_telegram }}
+          RIELABORA: ${{ inputs.rielabora }}
+          GRUPPO_ID: ${{ vars.GRUPPO_ID }}
+          COMUNE: ${{ vars.COMUNE }}
+          CFD_ZONA: ${{ vars.CFD_ZONA }}
+          CFD_NOME_ZONA: ${{ vars.CFD_NOME_ZONA }}
+          GITHUB_TOKEN: ${{ github.token }}   # lettura di riserva del bollettino nazionale (limite di richieste piu' alto)
+        run: python monitor-allerte/monitor_allerte.py
+      - name: Scollega la VPN
+        if: always()
+        run: bash scripts/vpn-italia.sh giu
+
+  # Secondo tentativo: se il bollettino non e' stato letto (VPN che non passa traffico, sito della Regione in timeout) si riprova
+  # UNA volta, su un runner nuovo, dopo una pausa. Se anche questo fallisce si aspetta il controllo successivo (tra 10 minuti).
+  riprova:
+    needs: controlla
+    if: needs.controlla.outputs.letto == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Pausa prima di riprovare
+        run: sleep 45
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: monitor-allerte/requirements.txt
+      - run: pip install -r monitor-allerte/requirements.txt
+      - name: Collega la VPN italiana (solo se il segreto WG_CONF e' impostato)
+        timeout-minutes: 5        # un VPN che non risponde non deve bloccare il monitoraggio
+        continue-on-error: true
+        env:
+          WG_CONF: ${{ secrets.WG_CONF }}
+          WG_CONF_2: ${{ secrets.WG_CONF_2 }}     # facoltativo: configurazione di riserva
+        run: bash scripts/vpn-italia.sh su
+      - name: Controlla il CFD e aggiorna Firebase (secondo tentativo)
+        env:
+          TENTATIVO: "2"      # non conta come un controllo in piu' nel contatore degli avvisi
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

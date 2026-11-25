@@ -711,11 +711,15 @@ def esegui(archivio, invia=None):
             except Exception as e:
                 print("Controllo dei PDF non riuscito:", e)
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti ({via})", "formato": via, "erroriConsecutivi": 0, "nonRaggiungibile": False})
+        segnala_letto(True)
         return 0
     except SitoNonRaggiungibile as e:
         # il sito della Regione e' fuori uso: non e' un errore dello script. Si tiene l'ultimo bollettino, si segnala "non aggiornato"
         # nell'app e il lavoro su GitHub resta verde. Avviso su Telegram solo se dura da circa un'ora (6 controlli).
-        n = int((archivio.leggi("cfd_stato/monitor") or {}).get("erroriConsecutivi", 0)) + 1
+        segnala_letto(False)
+        # il secondo tentativo (TENTATIVO=2, rilanciato dal workflow dopo un fallimento) non conta come un controllo in piu':
+        # altrimenti gli avvisi dopo 3 e 6 controlli di fila scatterebbero in meta' tempo
+        n = int((archivio.leggi("cfd_stato/monitor") or {}).get("erroriConsecutivi", 0)) + (0 if os.environ.get("TENTATIVO") == "2" else 1)
         msg = "Sito della Regione non raggiungibile: bollettino non aggiornato (" + str(e)[:150] + ")"
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "errore", "messaggio": msg[:300], "erroriConsecutivi": n, "nonRaggiungibile": True})
         print("ATTENZIONE:", msg)
@@ -737,6 +741,19 @@ def esegui(archivio, invia=None):
         if n == 3:
             invia(f"⚠️ Monitoraggio allerte: 3 controlli consecutivi falliti ({str(e)[:150]}).\nVerifica a mano: {CFD_URL}")
         return 1
+
+
+def segnala_letto(letto):
+    """Su GitHub Actions scrive l'esito «bollettino letto / non letto» come output del passo: il workflow lo usa per
+    rilanciare il controllo una volta su un altro runner. Fuori da GitHub (o senza la variabile) non fa nulla."""
+    percorso = os.environ.get("GITHUB_OUTPUT")
+    if not percorso:
+        return
+    try:
+        with open(percorso, "a", encoding="utf-8") as f:
+            f.write("letto=" + ("true" if letto else "false") + "\n")
+    except OSError:
+        pass
 
 
 def main():
