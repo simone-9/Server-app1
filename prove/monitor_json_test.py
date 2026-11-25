@@ -89,6 +89,16 @@ A3 = m.ArchivioMemoria(); esegui_con_pagina(arancio, A3, "<html></html>")
 ok(all(x["pdfUrl"] == m.CFD_URL for x in A3.liste["allerte_cfd_veneto"]), "PDF non nell'elenco: resta la pagina del CFD")
 ok(m._numero_doc("Bollettino n. 0176/2026") == (176, 2026) and m._numero_doc("senza numero") is None, "numero del documento letto anche con zeri")
 
+# 5c) registrato con la pagina CFD lenta (link alla pagina), poi riparato al controllo successivo quando la pagina risponde
+A4 = m.ArchivioMemoria(); esegui_con_pagina(arancio, A4, "<html></html>")
+ok(A4.doc["cfd_stato/monitor"]["ultimoDocumentoUrl"] == m.CFD_URL, "pagina lenta alla registrazione: link alla pagina")
+esegui_con_pagina(arancio, A4, PAGINA)
+ok(all(x["pdfUrl"] == PDF176 for x in A4.liste["allerte_cfd_veneto"]) and A4.doc["cfd_stato/monitor"]["ultimoDocumentoUrl"] == PDF176, "controllo successivo: link riparato al PDF (allerte e stato)")
+n_prima = len(A4.liste["allerte_cfd_veneto"]); esegui_con_pagina(arancio, A4, PAGINA)
+ok(len(A4.liste["allerte_cfd_veneto"]) == n_prima, "riparazione senza doppioni")
+A5 = m.ArchivioMemoria(); esegui_con_pagina(arancio, A5, "<html></html>"); esegui_con_pagina(arancio, A5, "<html></html>")
+ok(all(x["pdfUrl"] == m.CFD_URL for x in A5.liste["allerte_cfd_veneto"]), "se il PDF non e' ancora in elenco resta la pagina (nessun errore)")
+
 # 6) il PDF dello stesso bollettino (gia' letto da JSON) non viene riletto
 ok("Bollettino 176/2026#00" in A.doc["cfd_stato/letti"]["chiavi"], "documento segnato come letto")
 
