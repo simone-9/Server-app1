@@ -98,12 +98,23 @@ prova() {
 N=0; [ -n "${WG_CONF:-}" ] && N=$((N + 1)); [ -n "${WG_CONF_2:-}" ] && N=$((N + 1))
 TENT=3; [ "$N" -gt 1 ] && TENT=2
 RIUSCITA=""
-if [ -n "${WG_CONF:-}" ] && prova "$WG_CONF" "VPN principale" "$TENT"; then
-  RIUSCITA="principale"
-elif [ -n "${WG_CONF_2:-}" ]; then
-  [ -n "${WG_CONF:-}" ] && dire "La VPN principale non passa traffico: provo la configurazione di riserva."
-  prova "$WG_CONF_2" "VPN di riserva" "$TENT" && RIUSCITA="di riserva"
-fi
+# Se nessuna configurazione passa traffico si riprova UNA volta dopo una pausa: spesso il problema e' del runner
+# (rete lenta o degradata in quel momento) e dopo un minuto e' passato. Tempo massimo totale ben dentro i 5 minuti del passo.
+GIRI=2; PAUSA_GIRI="${VPN_PAUSA_GIRI:-45}"
+for GIRO in $(seq 1 "$GIRI"); do
+  if [ -n "${WG_CONF:-}" ] && prova "$WG_CONF" "VPN principale" "$TENT"; then
+    RIUSCITA="principale"
+  elif [ -n "${WG_CONF_2:-}" ]; then
+    [ -n "${WG_CONF:-}" ] && dire "La VPN principale non passa traffico: provo la configurazione di riserva."
+    prova "$WG_CONF_2" "VPN di riserva" "$TENT" && RIUSCITA="di riserva"
+  fi
+  [ -n "$RIUSCITA" ] && break
+  if [ "$GIRO" -lt "$GIRI" ]; then
+    dire "Nessuna VPN passa traffico: secondo giro tra ${PAUSA_GIRI} s."
+    sleep "$PAUSA_GIRI"
+    fase "secondo giro di tentativi"
+  fi
+done
 if [ -z "$RIUSCITA" ]; then
   dire "::warning::Nessuna VPN passa traffico: scollegata, si continua con la rete di GitHub."
   exit 0
