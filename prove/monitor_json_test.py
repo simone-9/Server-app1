@@ -69,6 +69,26 @@ ok(reg[0]["tendenza"] and reg[0]["pdfUrl"] == m.CFD_URL, "tendenza salvata, link
 rc, msgs = esegui(arancio, A)
 ok(len(A.liste["allerte_cfd_veneto"]) == 2 and not msgs, "secondo giro: niente doppioni, niente Telegram")
 
+# 5b) il link «Fonte» punta al PDF del documento, trovato nell'elenco della pagina CFD (il JSON non lo contiene)
+PDF176 = "https://www.regione.veneto.it/documents/90748/BAR_231126.pdf"
+PAGINA = ('<html><a href="/documents/90748/AAR_221126.pdf">Avviso di allerta regionale n. 175/2026</a>'
+          '<a href="/documents/90748/BAR_231126.pdf">Bollettino di allerta regionale n. 176/2026</a>'
+          '<a href="/documents/90748/BAR_221126.pdf">Bollettino di allerta regionale n. 175/2026</a></html>')
+def esegui_con_pagina(dati, A, pagina):
+    def finto(url, tentativi=6):
+        if url == m.HOME_URL: return types.SimpleNamespace(text=HOME)
+        if "BLMultiCfd" in url: return types.SimpleNamespace(json=lambda: dati)
+        if url == m.CFD_URL: return types.SimpleNamespace(text=pagina)
+        raise m.SitoNonRaggiungibile("finto")
+    m.http_get = finto
+    return m.esegui(A, lambda t: True)
+A2 = m.ArchivioMemoria(); esegui_con_pagina(arancio, A2, PAGINA)
+ok(all(x["pdfUrl"] == PDF176 for x in A2.liste["allerte_cfd_veneto"]), "link Fonte = PDF del bollettino 176/2026 (non il 175 ne' l'avviso)")
+ok(A2.doc["cfd_stato/monitor"]["ultimoDocumentoUrl"] == PDF176, "ultimo documento: link al PDF")
+A3 = m.ArchivioMemoria(); esegui_con_pagina(arancio, A3, "<html></html>")
+ok(all(x["pdfUrl"] == m.CFD_URL for x in A3.liste["allerte_cfd_veneto"]), "PDF non nell'elenco: resta la pagina del CFD")
+ok(m._numero_doc("Bollettino n. 0176/2026") == (176, 2026) and m._numero_doc("senza numero") is None, "numero del documento letto anche con zeri")
+
 # 6) il PDF dello stesso bollettino (gia' letto da JSON) non viene riletto
 ok("Bollettino 176/2026#00" in A.doc["cfd_stato/letti"]["chiavi"], "documento segnato come letto")
 

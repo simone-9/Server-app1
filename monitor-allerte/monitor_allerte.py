@@ -461,6 +461,27 @@ def leggi_json(dati):
         raise ErroreLettura(f"JSON non leggibile: {type(e).__name__}: {e}")
 
 
+def _numero_doc(testo):
+    """'n. 178/2026' (anche con zeri davanti) -> (178, 2026); None se non c'e'."""
+    m = re.search(r"\bn\.?\s*0*(\d+)\s*/\s*(\d{4})", testo or "", re.I)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def pdf_del_documento(prendi, doc):
+    """Il JSON non contiene l'indirizzo del PDF: lo si cerca nell'elenco della pagina CFD (stesso tipo e stesso numero).
+    Se la pagina non risponde o il documento non c'e', resta il collegamento alla pagina del CFD (mai un errore)."""
+    try:
+        voluto, avviso = _numero_doc("n. " + str(doc["numero"])), doc["tipo"] == "Avviso"
+        if voluto is None:
+            return CFD_URL
+        for d in trova_documenti(prendi(CFD_URL, 2).text):
+            if _numero_doc(d["testo"]) == voluto and bool(re.search(r"avviso", d["testo"], re.I)) == avviso:
+                return d["url"]
+    except Exception as e:
+        print(f"Link al PDF non trovato ({type(e).__name__}): resta la pagina del CFD")
+    return CFD_URL
+
+
 def passo_json(archivio, invia, prendi):
     """Fonte principale. Ritorna quanti documenti nuovi ha elaborato (0 se gia' letto). Solleva se non riesce."""
     link = trova_json(prendi(HOME_URL).text)
@@ -474,7 +495,7 @@ def passo_json(archivio, invia, prendi):
         if k not in chiavi:
             segna_letto(archivio, doc)
         return 0
-    registra_documento(archivio, hashlib.sha1(("json:" + k).encode()).hexdigest()[:20], link, CFD_URL, doc, invia, "JSON")
+    registra_documento(archivio, hashlib.sha1(("json:" + k).encode()).hexdigest()[:20], link, pdf_del_documento(prendi, doc), doc, invia, "JSON")
     return 1
 
 
