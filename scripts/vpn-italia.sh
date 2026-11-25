@@ -69,7 +69,22 @@ if [ "$OK" != "1" ]; then
 fi
 fase "handshake riuscito"
 
-PAESE="$(curl -s -m 10 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')"
+# paese di uscita: prima per indirizzo IP (senza DNS, che subito dopo l'apertura puo' non essere pronto), poi con un secondo servizio;
+# 3 tentativi a distanza di 4 s prima di dichiarare il tunnel inutilizzabile
+paese() {
+  local p
+  p="$(curl -s -m 6 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^loc=//p' | tr -d '[:space:]')"
+  case "$p" in [A-Z][A-Z]) echo "$p"; return ;; esac
+  p="$(curl -s -m 6 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')"
+  case "$p" in [A-Z][A-Z]) echo "$p" ;; esac
+}
+PAESE=""
+for T in 1 2 3; do
+  PAESE="$(paese)"
+  [ -n "$PAESE" ] && break
+  fase "controllo della rete: nessuna risposta (tentativo $T di 3)"
+  [ "$T" != "3" ] && sleep 4
+done
 if [ -z "${PAESE:-}" ]; then
   spegni
   echo "::warning::Con la VPN non si raggiunge la rete: scollegata, si continua con la rete di GitHub."
