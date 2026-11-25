@@ -10,12 +10,23 @@
 set -u
 AZIONE="${1:-su}"
 INIZIO=$SECONDS
-fase() { echo "  [VPN +$((SECONDS - INIZIO))s] $*"; }
+# Le righe scritte mentre il tunnel e' aperto possono andare perse nel log di GitHub (il traffico del runner passa dalla VPN):
+# si salvano anche in un file e il passo «Scollega la VPN», a tunnel chiuso, le ristampa tutte.
+LOG=/tmp/vpn-italia.log
+dire() { echo "$*"; echo "$*" >> "$LOG" 2>/dev/null || true; }
+fase() { dire "  [VPN +$((SECONDS - INIZIO))s] $*"; }
 
 if [ "$AZIONE" = "giu" ]; then
   if sudo -n true 2>/dev/null && ip link show wg0 >/dev/null 2>&1; then
+    T="$(sudo wg show wg0 transfer 2>/dev/null | awk '{print "ricevuti " $2 " byte, inviati " $3 " byte"}' | head -n1)"
+    [ -n "${T:-}" ] && dire "  traffico nel tunnel: $T"
     timeout 20 sudo wg-quick down wg0 >/dev/null 2>&1 || sudo ip link delete wg0 >/dev/null 2>&1 || true
-    echo "VPN scollegata."
+    dire "VPN scollegata."
+  fi
+  if [ -s "$LOG" ]; then
+    echo "--- Riepilogo della VPN di questa esecuzione ---"
+    sed 's/^::warning:://' "$LOG"
+    rm -f "$LOG"
   fi
   exit 0
 fi
@@ -27,12 +38,12 @@ fi
 
 spegni() { timeout 20 sudo wg-quick down wg0 >/dev/null 2>&1 || sudo ip link delete wg0 >/dev/null 2>&1 || true; }
 
-echo "Collego la VPN italiana..."
+dire "Collego la VPN italiana..."
 if ! command -v wg-quick >/dev/null 2>&1 || ! command -v resolvconf >/dev/null 2>&1; then
   # DPkg::Lock::Timeout: se il runner sta ancora facendo aggiornamenti si attende al massimo 30 s
   export DEBIAN_FRONTEND=noninteractive
   timeout 120 sudo apt-get -o DPkg::Lock::Timeout=30 install -y -qq wireguard-tools resolvconf >/dev/null 2>&1 \
-    || { echo "::warning::Installazione di WireGuard non riuscita o troppo lenta: si continua senza VPN."; exit 0; }
+    || { dire "::warning::Installazione di WireGuard non riuscita o troppo lenta: si continua senza VPN."; exit 0; }
   fase "pacchetti installati"
 else
   fase "pacchetti gia' presenti"
@@ -50,7 +61,7 @@ rm -f "$TMP"
 
 if ! timeout 30 sudo wg-quick up wg0 >/dev/null 2>&1; then
   spegni
-  echo "::warning::VPN non collegata (tempo scaduto o errore): si continua con la rete di GitHub."
+  dire "::warning::VPN non collegata (tempo scaduto o errore): si continua con la rete di GitHub."
   exit 0
 fi
 fase "tunnel aperto"
@@ -64,7 +75,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
 done
 if [ "$OK" != "1" ]; then
   spegni
-  echo "::warning::La VPN non risponde (nessun handshake): scollegata, si continua con la rete di GitHub."
+  dire "::warning::La VPN non risponde (nessun handshake): scollegata, si continua con la rete di GitHub."
   exit 0
 fi
 fase "handshake riuscito"
@@ -87,11 +98,14 @@ for T in 1 2 3; do
 done
 if [ -z "${PAESE:-}" ]; then
   spegni
-  echo "::warning::Con la VPN non si raggiunge la rete: scollegata, si continua con la rete di GitHub."
+  dire "::warning::Con la VPN non si raggiunge la rete: scollegata, si continua con la rete di GitHub."
   exit 0
 fi
-echo "VPN collegata. Paese di uscita: ${PAESE} (in ${SECONDS}s dall'avvio dello script)"
+dire "VPN collegata. Paese di uscita: ${PAESE} (in ${SECONDS}s dall'avvio dello script)"
 if [ "${PAESE}" != "IT" ]; then
-  echo "::warning::L'uscita della VPN non risulta in Italia (${PAESE}): scegli un server italiano."
+  dire "::warning::L'uscita della VPN non risulta in Italia (${PAESE}): scegli un server italiano."
 fi
+# solo informativo: il sito della Regione risponde da questa uscita? (000 = nessuna risposta)
+RC="$(curl -s -m 10 -o /dev/null -w '%{http_code}' https://www.regione.veneto.it/web/protezione-civile/cfd 2>/dev/null)"
+fase "sito della Regione Veneto: HTTP ${RC:-000}"
 exit 0
