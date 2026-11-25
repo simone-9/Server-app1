@@ -42,10 +42,11 @@ jobs:
         run: command -v pdftotext >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils)
 
       - name: Collega la VPN italiana (solo se il segreto WG_CONF_IDRO e' impostato)
-        timeout-minutes: 4        # un VPN che non risponde non deve bloccare il monitoraggio
+        timeout-minutes: 5        # un VPN che non risponde non deve bloccare il monitoraggio
         continue-on-error: true
         env:
           WG_CONF: ${{ secrets.WG_CONF_IDRO }}
+          WG_CONF_2: ${{ secrets.WG_CONF_IDRO_2 }}     # facoltativo: configurazione di riserva
         run: bash scripts/vpn-italia.sh su
 
       - name: Scarica dati ARPAV e invia gli avvisi
