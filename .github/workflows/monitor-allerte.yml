@@ -58,6 +58,9 @@ jobs:
       - name: Scollega la VPN
         if: always()
         run: bash scripts/vpn-italia.sh giu
+      - name: Esito del controllo (se non letto parte il secondo tentativo)
+        if: always()
+        run: echo "bollettino letto = '${{ steps.controllo.outputs.letto }}' (vuoto = modalita' di prova o errore dello script; 'false' = parte il secondo tentativo)"
 
   # Secondo tentativo: se il bollettino non e' stato letto (VPN che non passa traffico, sito della Regione in timeout) si riprova
   # UNA volta, su un runner nuovo, dopo una pausa. Se anche questo fallisce si aspetta il controllo successivo (tra 10 minuti).

@@ -712,6 +712,7 @@ def esegui(archivio, invia=None):
                 print("Controllo dei PDF non riuscito:", e)
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "ultimoOk": ora, "esito": "ok", "messaggio": f"{nuovi} nuovi documenti ({via})", "formato": via, "erroriConsecutivi": 0, "nonRaggiungibile": False})
         segnala_letto(True)
+        riepilogo(f"✅ Bollettino letto dal sito della Regione (via {via}): {nuovi} nuovi documenti." + (" [secondo tentativo]" if os.environ.get("TENTATIVO") == "2" else ""))
         return 0
     except SitoNonRaggiungibile as e:
         # il sito della Regione e' fuori uso: non e' un errore dello script. Si tiene l'ultimo bollettino, si segnala "non aggiornato"
@@ -723,6 +724,7 @@ def esegui(archivio, invia=None):
         msg = "Sito della Regione non raggiungibile: bollettino non aggiornato (" + str(e)[:150] + ")"
         archivio.scrivi("cfd_stato/monitor", {"ultimoControllo": ora, "esito": "errore", "messaggio": msg[:300], "erroriConsecutivi": n, "nonRaggiungibile": True})
         print("ATTENZIONE:", msg)
+        riepilogo("⚠️ Bollettino NON letto: il sito della Regione non risponde." + (" [secondo tentativo: si aspetta il controllo successivo]" if os.environ.get("TENTATIVO") == "2" else " Parte un secondo tentativo su un runner nuovo."))
         if not registrata[0]:   # se la pagina e' stata letta e manca solo un PDF, la lettura e' gia' registrata come riuscita
             registra_lettura(archivio, ora, "timeout", _ULTIMI_TENTATIVI, time.monotonic() - t0)
         if n >= int(os.environ.get("RISERVA_DPC_DOPO", "3")):
@@ -754,6 +756,18 @@ def segnala_letto(letto):
             f.write("letto=" + ("true" if letto else "false") + "\n")
     except OSError:
         pass
+
+
+def riepilogo(testo):
+    """Una riga nel log e, su GitHub, nel riepilogo della pagina dell'esecuzione: cosa e' successo in questo controllo."""
+    print(testo)
+    percorso = os.environ.get("GITHUB_STEP_SUMMARY")
+    if percorso:
+        try:
+            with open(percorso, "a", encoding="utf-8") as f:
+                f.write(testo + "\n\n")
+        except OSError:
+            pass
 
 
 def main():
