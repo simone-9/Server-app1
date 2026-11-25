@@ -50,6 +50,15 @@ else
   fase "pacchetti gia' presenti"
 fi
 
+# Runner lento: se i pacchetti ci hanno messo molto (di solito 3-10 s) la rete di quel runner e' degradata e, nelle esecuzioni andate male,
+# anche il tunnel non passava traffico. Inutile consumare minuti in tentativi: un solo controllo della VPN principale, poi si va avanti e,
+# se il bollettino non viene letto, il workflow rifa' il controllo su un runner nuovo.
+LENTO=""
+if [ $((SECONDS - INIZIO)) -gt "${VPN_SOGLIA_LENTO:-12}" ]; then
+  LENTO=1
+  dire "Runner lento (pacchetti in $((SECONDS - INIZIO)) s): un solo tentativo di VPN, poi il controllo passa a un runner nuovo se serve."
+fi
+
 # paese di uscita: prima per indirizzo IP (senza DNS, che subito dopo l'apertura puo' non essere pronto), poi con un secondo servizio
 paese() {
   local p
@@ -97,26 +106,16 @@ prova() {
 
 N=0; [ -n "${WG_CONF:-}" ] && N=$((N + 1)); [ -n "${WG_CONF_2:-}" ] && N=$((N + 1))
 TENT=3; [ "$N" -gt 1 ] && TENT=2
+[ -n "$LENTO" ] && TENT=1
 RIUSCITA=""
-# Se nessuna configurazione passa traffico si riprova UNA volta dopo una pausa: spesso il problema e' del runner
-# (rete lenta o degradata in quel momento) e dopo un minuto e' passato. Tempo massimo totale ben dentro i 5 minuti del passo.
-GIRI=2; PAUSA_GIRI="${VPN_PAUSA_GIRI:-45}"
-for GIRO in $(seq 1 "$GIRI"); do
-  if [ -n "${WG_CONF:-}" ] && prova "$WG_CONF" "VPN principale" "$TENT"; then
-    RIUSCITA="principale"
-  elif [ -n "${WG_CONF_2:-}" ]; then
-    [ -n "${WG_CONF:-}" ] && dire "La VPN principale non passa traffico: provo la configurazione di riserva."
-    prova "$WG_CONF_2" "VPN di riserva" "$TENT" && RIUSCITA="di riserva"
-  fi
-  [ -n "$RIUSCITA" ] && break
-  if [ "$GIRO" -lt "$GIRI" ]; then
-    dire "Nessuna VPN passa traffico: secondo giro tra ${PAUSA_GIRI} s."
-    sleep "$PAUSA_GIRI"
-    fase "secondo giro di tentativi"
-  fi
-done
+if [ -n "${WG_CONF:-}" ] && prova "$WG_CONF" "VPN principale" "$TENT"; then
+  RIUSCITA="principale"
+elif [ -n "${WG_CONF_2:-}" ] && [ -z "$LENTO" ]; then
+  [ -n "${WG_CONF:-}" ] && dire "La VPN principale non passa traffico: provo la configurazione di riserva."
+  prova "$WG_CONF_2" "VPN di riserva" "$TENT" && RIUSCITA="di riserva"
+fi
 if [ -z "$RIUSCITA" ]; then
-  dire "::warning::Nessuna VPN passa traffico: scollegata, si continua con la rete di GitHub."
+  dire "::warning::Nessuna VPN passa traffico: scollegata, si continua con la rete di GitHub${LENTO:+ (runner lento: niente riserva)}."
   exit 0
 fi
 dire "VPN collegata ($RIUSCITA). Paese di uscita: ${PAESE} (in ${SECONDS}s dall'avvio dello script)"
