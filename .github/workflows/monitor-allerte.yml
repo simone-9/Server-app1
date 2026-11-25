@@ -33,6 +33,8 @@ jobs:
           cache-dependency-path: monitor-allerte/requirements.txt
       - run: pip install -r monitor-allerte/requirements.txt
       - name: Collega la VPN italiana (solo se il segreto WG_CONF e' impostato)
+        timeout-minutes: 4        # un VPN che non risponde non deve bloccare il monitoraggio
+        continue-on-error: true
         env:
           WG_CONF: ${{ secrets.WG_CONF }}
         run: bash scripts/vpn-italia.sh su
